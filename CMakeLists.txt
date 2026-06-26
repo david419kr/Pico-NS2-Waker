@@ -46,6 +46,7 @@ target_compile_options(ds5onswitch_core PRIVATE
 )
 
 add_executable(ds5onswitch
+    src/bootsel_button.cpp
     src/dualsense_audio.cpp
     src/dualsense_bt.cpp
     src/main.cpp

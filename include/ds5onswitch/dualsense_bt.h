@@ -21,5 +21,7 @@ bool dualsense_bt_is_connected();
 bool dualsense_bt_send_output_report(const DualSenseBtOutputReport &report);
 bool dualsense_bt_send_raw_output_report(const uint8_t *report, std::size_t size);
 bool dualsense_bt_disconnect();
+void dualsense_bt_forget_pairings();
+void dualsense_bt_persist_blacklist_if_dirty();
 
 } // namespace ds5onswitch

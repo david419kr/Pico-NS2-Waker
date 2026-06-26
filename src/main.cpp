@@ -1,4 +1,5 @@
 #include "ds5onswitch/mapper.h"
+#include "ds5onswitch/bootsel_button.h"
 #include "ds5onswitch/dualsense_audio.h"
 #include "ds5onswitch/dualsense_bt.h"
 #include "ds5onswitch/dualsense_output.h"
@@ -198,13 +199,27 @@ void service_led()
     static uint32_t last_ms = 0;
     static bool led = false;
     const uint32_t now = board_millis();
-    const uint32_t interval = tud_mounted() ? 1000u : 250u;
-    if (now - last_ms < interval) {
+    bool override_led = false;
+    if (bootsel_button_led_override(override_led)) {
+        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, override_led);
         return;
     }
 
-    last_ms = now;
-    led = !led;
+    const bool mounted = tud_mounted();
+    const bool connected = dualsense_bt_is_connected();
+    if (!mounted || !connected) {
+        const uint32_t interval = mounted ? 500u : 250u;
+        if (now - last_ms < interval) {
+            return;
+        }
+
+        last_ms = now;
+        led = !led;
+        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, led);
+        return;
+    }
+
+    led = bootsel_button_solid_led_enabled();
     cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, led);
 }
 
@@ -246,6 +261,7 @@ int main()
         service_dualsense_output();
         service_usb_reports();
         service_usb_reconnect();
+        bootsel_button_task();
         service_led();
     }
 }

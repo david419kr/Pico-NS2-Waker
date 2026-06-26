@@ -17,12 +17,17 @@ Implemented runtime pieces:
    - DualSense headset jack active: HID + USB stereo output + USB microphone.
 7. DualSense headset audio output: USB 48 kHz stereo PCM is encoded to Opus and sent over Bluetooth in DualSense `0x36` speaker/headset reports.
 8. DualSense microphone input: Bluetooth `0x31` mic Opus frames are decoded and exposed through the USB Audio IN endpoint.
+9. BOOTSEL button gestures:
+   - short press toggles the normal solid LED on/off.
+   - double press reboots the Pico into the firmware.
+   - triple press reboots into USB BOOTSEL mass-storage mode.
+   - long press forgets all paired controllers, persists a reconnect blacklist, and flashes the LED six times.
 
 Not implemented on `main`:
 
 - Auto Audio Haptics.
 - Runtime haptics mode switching.
-- Persisted pairing or user configuration UI.
+- User configuration UI.
 
 ## Build
 
@@ -47,6 +52,8 @@ Verified locally on 2026-06-27:
 The current UF2 starts as USB VID/PID `057e:2009` with product string `Pro Controller`. It handles the initial USB command/subcommand surface needed for Switch Pro negotiation, including USB response `0x81`, subcommand reply `0x21`, SPI read calibration payloads, IMU/vibration enable state, player-light state, and `0x01/0x10` rumble packet decoding. When a DualSense is connected over Bluetooth, its BT `0x31` reports replace the neutral input state.
 
 USB Audio interfaces are exposed only after DualSense status makes them useful. Because USB interfaces cannot be added to an already-enumerated configuration, the firmware automatically performs a soft USB disconnect/reconnect when the DualSense connects, or when the headset jack state changes. No BOOTSEL mode switch is required. Switch hardware behavior for the composite HID+Audio personas is still unvalidated.
+
+The BOOTSEL button is polled in firmware. Short press only toggles the normal connected solid LED state; pairing/disconnected blink and clear-confirmation flashing still run even when the solid LED is toggled off.
 
 ## Design Notes
 

@@ -1,12 +1,14 @@
 #include "ds5onswitch/dualsense_bt.h"
 
 #include "btstack_event.h"
+#include "btstack_tlv.h"
+#include "btstack_util.h"
 #include "classic/sdp_server.h"
 #include "gap.h"
 #include "hci.h"
 #include "hci_cmd.h"
 #include "l2cap.h"
-#include "pico/cyw43_arch.h"
+#include "bsp/board_api.h"
 #include "pico/util/queue.h"
 
 #include <cstdio>
@@ -20,6 +22,8 @@ constexpr uint16_t kMtuControl = 672;
 constexpr uint16_t kMtuInterrupt = 672;
 constexpr std::size_t kSendQueueDepth = 8;
 constexpr std::size_t kSendPacketSize = kDualSenseBtAudioReportSize + 1u;
+constexpr uint32_t kBlacklistTlvTag = 0x424c434bu; // ASCII 'BLCK'
+constexpr uint32_t kBlacklistPersistDelayMs = 5000;
 
 struct SendElement {
     uint8_t data[kSendPacketSize];
@@ -36,6 +40,10 @@ bool g_device_found = false;
 uint8_t g_output_sequence = 0;
 DualSenseBtDataCallback g_data_callback = nullptr;
 queue_t g_send_fifo;
+bd_addr_t g_blacklisted_addrs[NVM_NUM_LINK_KEYS]{};
+int g_blacklisted_addr_count = 0;
+bool g_blacklist_dirty = false;
+uint32_t g_blacklist_dirty_ms = 0;
 
 void hci_packet_handler(uint8_t packet_type, uint16_t channel,
                         uint8_t *packet, uint16_t size);
@@ -108,6 +116,96 @@ void maybe_start_inquiry()
     gap_inquiry_start(30);
 }
 
+bool blacklist_contains(const bd_addr_t addr)
+{
+    for (int i = 0; i < g_blacklisted_addr_count; ++i) {
+        if (bd_addr_cmp(addr, g_blacklisted_addrs[i]) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void blacklist_add_unique(const bd_addr_t addr)
+{
+    if (blacklist_contains(addr) ||
+        g_blacklisted_addr_count >= NVM_NUM_LINK_KEYS) {
+        return;
+    }
+
+    bd_addr_copy(g_blacklisted_addrs[g_blacklisted_addr_count++], addr);
+    std::printf("[BT] Blacklisted %s\n", bd_addr_to_str(addr));
+}
+
+void blacklist_persist()
+{
+    const btstack_tlv_t *tlv = nullptr;
+    void *tlv_context = nullptr;
+    btstack_tlv_get_instance(&tlv, &tlv_context);
+    if (tlv == nullptr) {
+        std::printf("[BT] No TLV instance for blacklist persistence\n");
+        return;
+    }
+
+    if (g_blacklisted_addr_count == 0) {
+        tlv->delete_tag(tlv_context, kBlacklistTlvTag);
+        return;
+    }
+
+    const uint32_t bytes =
+        static_cast<uint32_t>(g_blacklisted_addr_count * sizeof(bd_addr_t));
+    const int rc = tlv->store_tag(
+        tlv_context, kBlacklistTlvTag,
+        reinterpret_cast<const uint8_t *>(g_blacklisted_addrs), bytes);
+    std::printf("[BT] Persisted %d blacklisted MAC(s), rc=%d\n",
+                g_blacklisted_addr_count, rc);
+}
+
+void blacklist_load()
+{
+    const btstack_tlv_t *tlv = nullptr;
+    void *tlv_context = nullptr;
+    btstack_tlv_get_instance(&tlv, &tlv_context);
+    if (tlv == nullptr) {
+        g_blacklisted_addr_count = 0;
+        return;
+    }
+
+    const int len = tlv->get_tag(
+        tlv_context, kBlacklistTlvTag,
+        reinterpret_cast<uint8_t *>(g_blacklisted_addrs),
+        sizeof(g_blacklisted_addrs));
+    if (len <= 0 || len % static_cast<int>(sizeof(bd_addr_t)) != 0) {
+        g_blacklisted_addr_count = 0;
+        return;
+    }
+
+    g_blacklisted_addr_count = len / static_cast<int>(sizeof(bd_addr_t));
+    if (g_blacklisted_addr_count > NVM_NUM_LINK_KEYS) {
+        g_blacklisted_addr_count = NVM_NUM_LINK_KEYS;
+    }
+    std::printf("[BT] Loaded %d blacklisted MAC(s)\n", g_blacklisted_addr_count);
+}
+
+void blacklist_remove(const bd_addr_t addr)
+{
+    for (int i = 0; i < g_blacklisted_addr_count; ++i) {
+        if (bd_addr_cmp(addr, g_blacklisted_addrs[i]) != 0) {
+            continue;
+        }
+
+        for (int j = i; j < g_blacklisted_addr_count - 1; ++j) {
+            bd_addr_copy(g_blacklisted_addrs[j], g_blacklisted_addrs[j + 1]);
+        }
+        --g_blacklisted_addr_count;
+        g_blacklist_dirty = true;
+        g_blacklist_dirty_ms = board_millis();
+        std::printf("[BT] Removed %s from blacklist, persistence deferred\n",
+                    bd_addr_to_str(addr));
+        return;
+    }
+}
+
 void hci_packet_handler(uint8_t packet_type, uint16_t channel,
                         uint8_t *packet, uint16_t size)
 {
@@ -119,6 +217,7 @@ void hci_packet_handler(uint8_t packet_type, uint16_t channel,
     switch (event_type) {
     case BTSTACK_EVENT_STATE:
         if (btstack_event_state_get_state(packet) == HCI_STATE_WORKING) {
+            blacklist_load();
             std::printf("[BT] Stack ready, start inquiry\n");
             maybe_start_inquiry();
         }
@@ -167,6 +266,12 @@ void hci_packet_handler(uint8_t packet_type, uint16_t channel,
         const uint32_t cod =
             hci_event_connection_request_get_class_of_device(packet);
         if (is_gamepad_class(cod)) {
+            if (blacklist_contains(addr)) {
+                std::printf("[BT] Rejecting blacklisted controller %s\n",
+                            bd_addr_to_str(addr));
+                hci_send_cmd(&hci_reject_connection_request, addr, 0x0f);
+                break;
+            }
             bd_addr_copy(g_current_addr, addr);
             gap_inquiry_stop();
             hci_send_cmd(&hci_accept_connection_request, addr, 0x01);
@@ -245,7 +350,6 @@ void hci_packet_handler(uint8_t packet_type, uint16_t channel,
             SendElement discarded{};
             queue_try_remove(&g_send_fifo, &discarded);
         }
-        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, false);
         maybe_start_inquiry();
         break;
     }
@@ -293,7 +397,7 @@ void l2cap_packet_handler(uint8_t packet_type, uint16_t channel,
         } else if (psm == PSM_HID_INTERRUPT) {
             g_hid_interrupt_cid = local_cid;
             std::printf("[BT] HID interrupt open cid=0x%04x\n", local_cid);
-            cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, true);
+            blacklist_remove(g_current_addr);
             gap_connectable_control(false);
             gap_discoverable_control(false);
             send_initial_output();
@@ -420,6 +524,44 @@ bool dualsense_bt_disconnect()
     }
     hci_send_cmd(&hci_disconnect, g_acl_handle, 0x13);
     return true;
+}
+
+void dualsense_bt_forget_pairings()
+{
+    std::printf("[BT] BOOTSEL hold - forget all paired controllers\n");
+
+    btstack_link_key_iterator_t it{};
+    if (gap_link_key_iterator_init(&it)) {
+        bd_addr_t addr{};
+        link_key_t key{};
+        link_key_type_t type{};
+        while (gap_link_key_iterator_get_next(&it, addr, key, &type)) {
+            blacklist_add_unique(addr);
+        }
+        gap_link_key_iterator_done(&it);
+    }
+
+    if (g_acl_handle != HCI_CON_HANDLE_INVALID) {
+        blacklist_add_unique(g_current_addr);
+        (void)dualsense_bt_disconnect();
+    }
+
+    gap_delete_all_link_keys();
+    blacklist_persist();
+    if (g_acl_handle == HCI_CON_HANDLE_INVALID) {
+        maybe_start_inquiry();
+    }
+}
+
+void dualsense_bt_persist_blacklist_if_dirty()
+{
+    if (!g_blacklist_dirty ||
+        board_millis() - g_blacklist_dirty_ms < kBlacklistPersistDelayMs) {
+        return;
+    }
+
+    g_blacklist_dirty = false;
+    blacklist_persist();
 }
 
 } // namespace ds5onswitch
