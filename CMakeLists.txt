@@ -18,6 +18,7 @@ add_library(ds5onswitch_core
     src/haptics.cpp
     src/mapper.cpp
     src/switch_pro.cpp
+    src/switch_usb.cpp
 )
 
 target_include_directories(ds5onswitch_core PUBLIC
@@ -31,16 +32,26 @@ target_compile_options(ds5onswitch_core PRIVATE
 
 add_executable(ds5onswitch
     src/main.cpp
+    src/usb_descriptors.cpp
 )
 
 target_link_libraries(ds5onswitch PRIVATE
     ds5onswitch_core
     pico_stdlib
     pico_cyw43_arch_none
+    tinyusb_device
+    tinyusb_board
 )
 
 target_compile_definitions(ds5onswitch PRIVATE
     PICO_FLASH_ASSUME_CORE1_SAFE=1
+    PICO_STDIO_USB_USE_DEFAULT_DESCRIPTORS=0
+    PICO_STDIO_USB_ENABLE_RESET_VIA_BAUD_RATE=0
+    PICO_STDIO_USB_ENABLE_RESET_VIA_VENDOR_INTERFACE=0
+)
+
+target_include_directories(ds5onswitch PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
 pico_set_program_name(ds5onswitch "ds5onswitch")

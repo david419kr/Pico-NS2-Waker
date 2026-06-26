@@ -26,6 +26,7 @@ $Exe = Join-Path $OutDir 'host_mapping_test.exe'
     (Join-Path $RepoRoot 'src\haptics.cpp') `
     (Join-Path $RepoRoot 'src\mapper.cpp') `
     (Join-Path $RepoRoot 'src\switch_pro.cpp') `
+    (Join-Path $RepoRoot 'src\switch_usb.cpp') `
     (Join-Path $RepoRoot 'tests\host_mapping_test.cpp') `
     -o $Exe
 

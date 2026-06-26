@@ -103,5 +103,6 @@ struct SwitchProState {
 };
 
 using SwitchProInputReport = std::array<uint8_t, kSwitchProInputReportSize>;
+using SwitchReport = std::array<uint8_t, kSwitchProInputReportSize>;
 
 } // namespace ds5onswitch

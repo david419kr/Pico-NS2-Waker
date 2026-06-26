@@ -30,8 +30,14 @@ cmake -S $RepoRoot -B $FullBuildDir -G Ninja `
     -DCMAKE_BUILD_TYPE=Release `
     -DPICO_BOARD=pico2_w `
     "-DPICO_SDK_PATH=$env:PICO_SDK_PATH"
+if ($LASTEXITCODE -ne 0) {
+    throw "CMake configure failed with exit code $LASTEXITCODE."
+}
 
 cmake --build $FullBuildDir --target ds5onswitch
+if ($LASTEXITCODE -ne 0) {
+    throw "CMake build failed with exit code $LASTEXITCODE."
+}
 
 $uf2 = Join-Path $FullBuildDir 'ds5onswitch.uf2'
 if (-not (Test-Path $uf2)) {

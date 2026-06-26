@@ -1,9 +1,11 @@
 #include "ds5onswitch/haptics.h"
 #include "ds5onswitch/mapper.h"
 #include "ds5onswitch/switch_pro.h"
+#include "ds5onswitch/switch_usb.h"
 
 #include <cassert>
 #include <cstdint>
+#include <cstring>
 
 using namespace ds5onswitch;
 
@@ -111,6 +113,76 @@ void test_haptics()
     assert(!cmd.active);
 }
 
+void test_switch_usb_reports()
+{
+    SwitchUsbEmulator usb;
+    DualSenseInput in{};
+    in.has_imu = true;
+    in.accel_x = 8192;
+    in.accel_z = 8192;
+    usb.set_state(map_dualsense_to_switch(in));
+
+    SwitchReport report{};
+    assert(usb.build_usb_response(kSwitchUsbCmdHandshake, report));
+    assert(report[0] == 0x81);
+    assert(report[1] == 0x02);
+    assert(report[3] == 0x03);
+
+    assert(usb.build_usb_response(kSwitchUsbCmdConnStatus, report));
+    assert(report[0] == 0x81);
+    assert(report[1] == 0x01);
+    assert(report[4] == 0x00);
+    assert(report[5] == 0x1b);
+    assert(report[6] == 0x7a);
+
+    assert(usb.build_subcommand_reply(kSwitchSubcmdRequestDeviceInfo,
+                                      nullptr, 0, report));
+    assert(report[0] == 0x21);
+    assert(report[13] == 0x82);
+    assert(report[14] == 0x02);
+    assert(report[15] == 0x03);
+    assert(report[17] == 0x03);
+    assert(report[18] == 0x02);
+    assert(report[25] == 0x01);
+    assert(report[26] == 0x01);
+
+    uint8_t spi_args[5] = {0x20, 0x60, 0x00, 0x00, 0x18};
+    assert(usb.build_subcommand_reply(kSwitchSubcmdSpiRead, spi_args,
+                                      sizeof(spi_args), report));
+    assert(report[0] == 0x21);
+    assert(report[13] == 0x90);
+    assert(report[14] == 0x10);
+    assert(report[15] == 0x20);
+    assert(report[16] == 0x60);
+    assert(report[19] == 0x18);
+    assert(read_i16_le(&report[26]) == 0x4000);
+    assert(read_i16_le(&report[38]) == 0x343b);
+
+    spi_args[0] = 0x00;
+    spi_args[1] = 0x60;
+    spi_args[4] = 0x20;
+    assert(usb.build_subcommand_reply(kSwitchSubcmdSpiRead, spi_args,
+                                      sizeof(spi_args), report));
+    assert(std::memcmp(&report[20], "000000000001", 12) == 0);
+    assert(report[38] == 0x03);
+    assert(report[39] == 0xa0);
+    assert(report[47] == 0x01);
+
+    uint8_t output[12] = {
+        kSwitchOutputSubcommand, 0x00,
+        0x34, 0xf0, 0x62, 0xe0,
+        0x00, 0x01, 0x40, 0x40,
+        kSwitchSubcmdSetPlayerLights, 0x0f,
+    };
+    const SwitchUsbOutputResult result = usb.handle_output_report(output, sizeof(output));
+    assert(result.has_reply);
+    assert(result.feedback.has_rumble);
+    assert(result.feedback.haptics.active);
+    assert(result.feedback.player_led_changed);
+    assert(result.feedback.player_led_mask == 0x0f);
+    assert(usb.player_led_mask() == 0x0f);
+}
+
 } // namespace
 
 int main()
@@ -118,5 +190,6 @@ int main()
     test_button_mapping();
     test_axis_and_motion_mapping();
     test_haptics();
+    test_switch_usb_reports();
     return 0;
 }
