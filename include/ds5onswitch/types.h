@@ -81,6 +81,11 @@ struct DualSenseInput {
     int16_t gyro_y = 0;
     int16_t gyro_z = 0;
     bool has_imu = false;
+
+    bool headphones_connected = false;
+    bool mic_connected = false;
+    bool mic_muted = false;
+    bool external_mic_active = false;
 };
 
 struct SwitchProState {

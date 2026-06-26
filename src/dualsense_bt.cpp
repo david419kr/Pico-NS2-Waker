@@ -19,7 +19,7 @@ namespace {
 constexpr uint16_t kMtuControl = 672;
 constexpr uint16_t kMtuInterrupt = 672;
 constexpr std::size_t kSendQueueDepth = 8;
-constexpr std::size_t kSendPacketSize = kDualSenseBtOutputReportSize + 1u;
+constexpr std::size_t kSendPacketSize = kDualSenseBtAudioReportSize + 1u;
 
 struct SendElement {
     uint8_t data[kSendPacketSize];
@@ -384,14 +384,22 @@ bool dualsense_bt_is_connected()
 
 bool dualsense_bt_send_output_report(const DualSenseBtOutputReport &report)
 {
+    return dualsense_bt_send_raw_output_report(report.data(), report.size());
+}
+
+bool dualsense_bt_send_raw_output_report(const uint8_t *report, std::size_t size)
+{
     if (g_hid_interrupt_cid == 0) {
+        return false;
+    }
+    if (report == nullptr || size + 1u > kSendPacketSize) {
         return false;
     }
 
     SendElement element{};
-    element.len = static_cast<uint16_t>(report.size() + 1u);
+    element.len = static_cast<uint16_t>(size + 1u);
     element.data[0] = 0xa2;
-    std::memcpy(element.data + 1, report.data(), report.size());
+    std::memcpy(element.data + 1, report, size);
 
     if (!queue_try_add(&g_send_fifo, &element)) {
         std::printf("[BT] output queue full\n");

@@ -143,6 +143,8 @@ void test_dualsense_bt_input_parser()
     write_i16_le(payload + 21, 8192);
     write_i16_le(payload + 23, -4096);
     write_i16_le(payload + 25, 2048);
+    payload[53] = 0x01 | 0x02 | 0x04;
+    payload[54] = 0x01;
 
     DualSenseInput parsed{};
     assert(parse_dualsense_bt_report(report, sizeof(report), parsed));
@@ -167,6 +169,10 @@ void test_dualsense_bt_input_parser()
     assert(parsed.accel_x == 8192);
     assert(parsed.accel_y == -4096);
     assert(parsed.accel_z == 2048);
+    assert(parsed.headphones_connected);
+    assert(parsed.mic_connected);
+    assert(parsed.mic_muted);
+    assert(parsed.external_mic_active);
 
     const SwitchProState state = map_dualsense_to_switch(parsed);
     assert((state.buttons & kNsB) != 0);

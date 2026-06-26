@@ -71,6 +71,11 @@ bool parse_dualsense_bt31_payload(const uint8_t *payload, std::size_t size,
     parsed.accel_z = read_le_i16(payload + 25);
     parsed.has_imu = true;
 
+    parsed.headphones_connected = (payload[53] & 0x01u) != 0;
+    parsed.mic_connected = (payload[53] & 0x02u) != 0;
+    parsed.mic_muted = (payload[53] & 0x04u) != 0;
+    parsed.external_mic_active = (payload[54] & 0x01u) != 0;
+
     out = parsed;
     return true;
 }

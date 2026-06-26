@@ -88,6 +88,17 @@ bool DualSenseOutputState::motors_active() const
     return state_[kRumbleLeftOffset] != 0 || state_[kRumbleRightOffset] != 0;
 }
 
+void DualSenseOutputState::copy_state_block(uint8_t *out, std::size_t size) const
+{
+    if (out == nullptr) {
+        return;
+    }
+
+    std::fill(out, out + size, 0);
+    const std::size_t copy_size = std::min<std::size_t>(state_.size(), size);
+    std::copy(state_.begin(), state_.begin() + copy_size, out);
+}
+
 DualSenseBtOutputReport DualSenseOutputState::build_report(uint8_t sequence) const
 {
     DualSenseBtOutputReport report{};
@@ -113,12 +124,21 @@ uint32_t dualsense_output_crc32(const uint8_t *data, std::size_t size)
 
 void fill_dualsense_output_crc(DualSenseBtOutputReport &report)
 {
+    fill_dualsense_output_crc(report.data(), report.size());
+}
+
+void fill_dualsense_output_crc(uint8_t *report, std::size_t size)
+{
+    if (report == nullptr || size < 4u) {
+        return;
+    }
+
     const uint32_t crc =
-        dualsense_output_crc32(report.data(), report.size() - 4u);
-    report[report.size() - 4u] = static_cast<uint8_t>(crc);
-    report[report.size() - 3u] = static_cast<uint8_t>(crc >> 8u);
-    report[report.size() - 2u] = static_cast<uint8_t>(crc >> 16u);
-    report[report.size() - 1u] = static_cast<uint8_t>(crc >> 24u);
+        dualsense_output_crc32(report, size - 4u);
+    report[size - 4u] = static_cast<uint8_t>(crc);
+    report[size - 3u] = static_cast<uint8_t>(crc >> 8u);
+    report[size - 2u] = static_cast<uint8_t>(crc >> 16u);
+    report[size - 1u] = static_cast<uint8_t>(crc >> 24u);
 }
 
 } // namespace ds5onswitch

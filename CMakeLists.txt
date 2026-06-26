@@ -14,6 +14,19 @@ project(ds5onswitch C CXX ASM)
 
 pico_sdk_init()
 
+include(FetchContent)
+
+set(OPUS_BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
+set(OPUS_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(OPUS_INSTALL_PKG_CONFIG_MODULE OFF CACHE BOOL "" FORCE)
+set(OPUS_INSTALL_CMAKE_CONFIG_MODULE OFF CACHE BOOL "" FORCE)
+set(OPUS_FIXED_POINT ON CACHE BOOL "" FORCE)
+FetchContent_Declare(opus
+    GIT_REPOSITORY https://github.com/xiph/opus.git
+    GIT_TAG v1.5.2
+)
+FetchContent_MakeAvailable(opus)
+
 add_library(ds5onswitch_core
     src/dualsense_output.cpp
     src/dualsense_report.cpp
@@ -33,6 +46,7 @@ target_compile_options(ds5onswitch_core PRIVATE
 )
 
 add_executable(ds5onswitch
+    src/dualsense_audio.cpp
     src/dualsense_bt.cpp
     src/main.cpp
     src/usb_descriptors.cpp
@@ -46,6 +60,7 @@ target_link_libraries(ds5onswitch PRIVATE
     pico_btstack_cyw43
     tinyusb_device
     tinyusb_board
+    opus
 )
 
 target_compile_definitions(ds5onswitch PRIVATE

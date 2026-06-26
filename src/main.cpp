@@ -1,8 +1,10 @@
 #include "ds5onswitch/mapper.h"
+#include "ds5onswitch/dualsense_audio.h"
 #include "ds5onswitch/dualsense_bt.h"
 #include "ds5onswitch/dualsense_output.h"
 #include "ds5onswitch/dualsense_report.h"
 #include "ds5onswitch/switch_usb.h"
+#include "ds5onswitch/usb_descriptors.h"
 
 #include "bsp/board_api.h"
 #include "pico/cyw43_arch.h"
@@ -25,6 +27,9 @@ uint8_t g_ds_output_sequence = 0;
 uint32_t g_last_haptics_ms = 0;
 uint32_t g_last_ds_output_ms = 0;
 bool g_ds_output_dirty = false;
+UsbAudioPersona g_usb_persona = UsbAudioPersona::HidOnly;
+bool g_usb_reconnect_pending = false;
+uint32_t g_usb_reconnect_at_ms = 0;
 
 void push_pending(const SwitchReport &report)
 {
@@ -60,9 +65,24 @@ void on_dualsense_bt_data(DualSenseBtChannel channel, const uint8_t *data,
         return;
     }
 
+    if (size >= 4u && data[0] == 0xa1 && data[1] == 0x31 &&
+        (data[2] & 0x02u) != 0) {
+        dualsense_audio_add_mic_frame(data + 4, size - 4u);
+        return;
+    }
+
     DualSenseInput input{};
     if (!parse_dualsense_bt_report(data, size, input)) {
         return;
+    }
+
+    dualsense_audio_update_status(input);
+    if (dualsense_audio_desired_persona() != g_usb_persona) {
+        g_usb_persona = dualsense_audio_desired_persona();
+        usb_descriptors_set_audio_persona(g_usb_persona);
+        tud_disconnect();
+        g_usb_reconnect_pending = true;
+        g_usb_reconnect_at_ms = board_millis() + 250u;
     }
 
     g_switch_usb.set_state(map_dualsense_to_switch(input));
@@ -92,8 +112,17 @@ void service_dualsense_connection()
     }
 
     was_connected = connected;
+    dualsense_audio_set_connected(connected);
     g_ds_output.reset();
     g_ds_output_dirty = connected;
+
+    if (dualsense_audio_desired_persona() != g_usb_persona) {
+        g_usb_persona = dualsense_audio_desired_persona();
+        usb_descriptors_set_audio_persona(g_usb_persona);
+        tud_disconnect();
+        g_usb_reconnect_pending = true;
+        g_usb_reconnect_at_ms = board_millis() + 250u;
+    }
 
     if (!connected) {
         DualSenseInput neutral{};
@@ -149,6 +178,21 @@ void service_usb_reports()
     send_report(g_switch_usb.build_input_report());
 }
 
+void service_usb_reconnect()
+{
+    if (!g_usb_reconnect_pending) {
+        return;
+    }
+
+    const uint32_t now = board_millis();
+    if (static_cast<int32_t>(now - g_usb_reconnect_at_ms) < 0) {
+        return;
+    }
+
+    tud_connect();
+    g_usb_reconnect_pending = false;
+}
+
 void service_led()
 {
     static uint32_t last_ms = 0;
@@ -182,6 +226,8 @@ int main()
     cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, false);
 
     g_ds_output.reset();
+    usb_descriptors_set_audio_persona(UsbAudioPersona::HidOnly);
+    dualsense_audio_init();
     dualsense_bt_register_data_callback(on_dualsense_bt_data);
 
     DualSenseInput neutral{};
@@ -196,8 +242,10 @@ int main()
         cyw43_arch_poll();
         tud_task();
         service_dualsense_connection();
+        dualsense_audio_loop(g_ds_output, g_ds_output_sequence);
         service_dualsense_output();
         service_usb_reports();
+        service_usb_reconnect();
         service_led();
     }
 }
