@@ -1,4 +1,7 @@
 #include "ds5onswitch/mapper.h"
+#include "ds5onswitch/dualsense_bt.h"
+#include "ds5onswitch/dualsense_output.h"
+#include "ds5onswitch/dualsense_report.h"
 #include "ds5onswitch/switch_usb.h"
 
 #include "bsp/board_api.h"
@@ -15,8 +18,13 @@ using namespace ds5onswitch;
 namespace {
 
 SwitchUsbEmulator g_switch_usb;
+DualSenseOutputState g_ds_output;
 std::array<SwitchReport, 3> g_pending_reports{};
 uint8_t g_pending_count = 0;
+uint8_t g_ds_output_sequence = 0;
+uint32_t g_last_haptics_ms = 0;
+uint32_t g_last_ds_output_ms = 0;
+bool g_ds_output_dirty = false;
 
 void push_pending(const SwitchReport &report)
 {
@@ -43,6 +51,80 @@ bool pop_pending(SwitchReport &report)
 void send_report(const SwitchReport &report)
 {
     (void)tud_hid_report(report[0], report.data() + 1, report.size() - 1);
+}
+
+void on_dualsense_bt_data(DualSenseBtChannel channel, const uint8_t *data,
+                          std::size_t size)
+{
+    if (channel != DualSenseBtChannel::Interrupt) {
+        return;
+    }
+
+    DualSenseInput input{};
+    if (!parse_dualsense_bt_report(data, size, input)) {
+        return;
+    }
+
+    g_switch_usb.set_state(map_dualsense_to_switch(input));
+}
+
+void apply_switch_feedback(const SwitchUsbFeedback &feedback)
+{
+    if (!feedback.has_rumble) {
+        return;
+    }
+
+    if (feedback.haptics.active) {
+        g_ds_output.apply_haptics(feedback.haptics);
+        g_last_haptics_ms = board_millis();
+    } else {
+        g_ds_output.clear_motors();
+    }
+    g_ds_output_dirty = true;
+}
+
+void service_dualsense_connection()
+{
+    static bool was_connected = false;
+    const bool connected = dualsense_bt_is_connected();
+    if (connected == was_connected) {
+        return;
+    }
+
+    was_connected = connected;
+    g_ds_output.reset();
+    g_ds_output_dirty = connected;
+
+    if (!connected) {
+        DualSenseInput neutral{};
+        neutral.has_imu = true;
+        g_switch_usb.set_state(map_dualsense_to_switch(neutral));
+    }
+}
+
+void service_dualsense_output()
+{
+    if (!dualsense_bt_is_connected()) {
+        return;
+    }
+
+    const uint32_t now = board_millis();
+    if (g_ds_output.motors_active() && now - g_last_haptics_ms > 96u) {
+        g_ds_output.clear_motors();
+        g_ds_output_dirty = true;
+    }
+
+    if (!g_ds_output_dirty &&
+        (!g_ds_output.motors_active() || now - g_last_ds_output_ms < 20u)) {
+        return;
+    }
+
+    const DualSenseBtOutputReport report =
+        g_ds_output.build_report(g_ds_output_sequence++);
+    if (dualsense_bt_send_output_report(report)) {
+        g_last_ds_output_ms = now;
+        g_ds_output_dirty = false;
+    }
 }
 
 void service_usb_reports()
@@ -92,17 +174,29 @@ int main()
         .speed = TUSB_SPEED_FULL,
     };
     tusb_init(BOARD_TUD_RHPORT, &dev_init);
+    board_init_after_tusb();
 
     if (cyw43_arch_init() != 0) {
         return 1;
     }
+    cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, false);
+
+    g_ds_output.reset();
+    dualsense_bt_register_data_callback(on_dualsense_bt_data);
 
     DualSenseInput neutral{};
     neutral.has_imu = true;
     g_switch_usb.set_state(map_dualsense_to_switch(neutral));
 
+    if (!dualsense_bt_init()) {
+        return 1;
+    }
+
     while (true) {
+        cyw43_arch_poll();
         tud_task();
+        service_dualsense_connection();
+        service_dualsense_output();
         service_usb_reports();
         service_led();
     }
@@ -163,6 +257,7 @@ extern "C" void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id,
 
     const SwitchUsbOutputResult result =
         g_switch_usb.handle_output_report(report.data(), size);
+    apply_switch_feedback(result.feedback);
     if (result.has_reply) {
         push_pending(result.reply);
     }

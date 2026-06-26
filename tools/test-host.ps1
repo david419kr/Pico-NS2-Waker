@@ -23,6 +23,8 @@ $Exe = Join-Path $OutDir 'host_mapping_test.exe'
 
 & $gpp.Source -std=c++20 -Wall -Wextra `
     -I (Join-Path $RepoRoot 'include') `
+    (Join-Path $RepoRoot 'src\dualsense_output.cpp') `
+    (Join-Path $RepoRoot 'src\dualsense_report.cpp') `
     (Join-Path $RepoRoot 'src\haptics.cpp') `
     (Join-Path $RepoRoot 'src\mapper.cpp') `
     (Join-Path $RepoRoot 'src\switch_pro.cpp') `

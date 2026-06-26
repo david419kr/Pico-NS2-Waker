@@ -15,6 +15,8 @@ project(ds5onswitch C CXX ASM)
 pico_sdk_init()
 
 add_library(ds5onswitch_core
+    src/dualsense_output.cpp
+    src/dualsense_report.cpp
     src/haptics.cpp
     src/mapper.cpp
     src/switch_pro.cpp
@@ -31,6 +33,7 @@ target_compile_options(ds5onswitch_core PRIVATE
 )
 
 add_executable(ds5onswitch
+    src/dualsense_bt.cpp
     src/main.cpp
     src/usb_descriptors.cpp
 )
@@ -38,13 +41,16 @@ add_executable(ds5onswitch
 target_link_libraries(ds5onswitch PRIVATE
     ds5onswitch_core
     pico_stdlib
-    pico_cyw43_arch_none
+    pico_cyw43_arch_poll
+    pico_btstack_classic
+    pico_btstack_cyw43
     tinyusb_device
     tinyusb_board
 )
 
 target_compile_definitions(ds5onswitch PRIVATE
     PICO_FLASH_ASSUME_CORE1_SAFE=1
+    CYW43_LWIP=0
     PICO_STDIO_USB_USE_DEFAULT_DESCRIPTORS=0
     PICO_STDIO_USB_ENABLE_RESET_VIA_BAUD_RATE=0
     PICO_STDIO_USB_ENABLE_RESET_VIA_VENDOR_INTERFACE=0
