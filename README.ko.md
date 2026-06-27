@@ -23,13 +23,14 @@ Credit: 이 프로젝트는 [awalol/DS5Dongle](https://github.com/awalol/DS5Dong
 - Raspberry Pi Pico 2 W
 - Sony DualSense 컨트롤러
 - Pico 2 W를 Switch/PC에 연결할 USB 케이블
-- 빌드된 펌웨어 파일: `build\pico2_w\ds5onswitch.uf2`
+- [최신 GitHub Release](https://github.com/david419kr/DS5onSwitch/releases/latest)의 펌웨어 파일
 
 ## 펌웨어 설치
 
 1. Pico 2 W의 BOOTSEL 버튼을 누른 채 PC에 USB로 연결합니다.
-2. PC에 나타난 USB 드라이브에 `ds5onswitch.uf2`를 복사합니다.
-3. 복사가 끝나면 Pico 2 W가 자동으로 재부팅됩니다.
+2. [최신 GitHub Release](https://github.com/david419kr/DS5onSwitch/releases/latest)에서 `ds5onswitch.uf2`를 다운로드합니다.
+3. PC에 나타난 USB 드라이브에 `ds5onswitch.uf2`를 복사합니다.
+4. 복사가 끝나면 Pico 2 W가 자동으로 재부팅됩니다.
 
 이미 이 펌웨어가 올라가 있다면 BOOTSEL 버튼을 4번 클릭해서 USB 드라이브 모드로 들어갈 수 있습니다.
 

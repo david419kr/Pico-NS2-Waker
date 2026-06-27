@@ -25,13 +25,14 @@ Credit: This project is not a fork of [awalol/DS5Dongle](https://github.com/awal
 - Raspberry Pi Pico 2 W
 - Sony DualSense controller
 - USB cable for connecting the Pico 2 W to the Switch/PC
-- Built firmware file: `build\pico2_w\ds5onswitch.uf2`
+- Firmware file from the [latest GitHub Release](https://github.com/david419kr/DS5onSwitch/releases/latest)
 
 ## Installing Firmware
 
 1. Hold the BOOTSEL button on the Pico 2 W while connecting it to your PC over USB.
-2. Copy `ds5onswitch.uf2` to the USB drive that appears on your PC.
-3. After the copy finishes, the Pico 2 W will reboot automatically.
+2. Download `ds5onswitch.uf2` from the [latest GitHub Release](https://github.com/david419kr/DS5onSwitch/releases/latest).
+3. Copy `ds5onswitch.uf2` to the USB drive that appears on your PC.
+4. After the copy finishes, the Pico 2 W will reboot automatically.
 
 If this firmware is already installed, you can click BOOTSEL 4 times to enter USB drive mode.
 
