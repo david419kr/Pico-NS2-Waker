@@ -31,6 +31,7 @@ bool g_ds_output_dirty = false;
 UsbAudioPersona g_usb_persona = UsbAudioPersona::HidOnly;
 bool g_usb_reconnect_pending = false;
 uint32_t g_usb_reconnect_at_ms = 0;
+bool g_ds_mute_button_down = false;
 
 void push_pending(const SwitchReport &report)
 {
@@ -78,6 +79,14 @@ void __not_in_flash_func(on_dualsense_bt_data)(DualSenseBtChannel channel,
         return;
     }
 
+    const bool mute_button_down = (input.buttons & kDs5Mute) != 0;
+    if (mute_button_down && !g_ds_mute_button_down) {
+        const bool muted = dualsense_audio_toggle_mic_muted();
+        g_ds_output.set_mic_muted(muted);
+        g_ds_output_dirty = true;
+    }
+    g_ds_mute_button_down = mute_button_down;
+
     dualsense_audio_update_status(input);
     if (dualsense_audio_desired_persona() != g_usb_persona) {
         g_usb_persona = dualsense_audio_desired_persona();
@@ -117,9 +126,11 @@ void __not_in_flash_func(service_dualsense_connection)()
     was_connected = connected;
     dualsense_audio_set_connected(connected);
     g_ds_output.reset();
+    g_ds_output.set_mic_muted(dualsense_audio_mic_muted());
     g_ds_output_dirty = connected;
 
     if (!connected) {
+        g_ds_mute_button_down = false;
         g_usb_reconnect_pending = false;
         g_usb_persona = UsbAudioPersona::HidOnly;
         usb_descriptors_set_audio_persona(g_usb_persona);

@@ -28,7 +28,13 @@ constexpr std::array<uint8_t, kDualSenseOutputStateSize> kInitialState = {
 constexpr std::size_t kRumbleRightOffset = 2;
 constexpr std::size_t kRumbleLeftOffset = 3;
 constexpr std::size_t kFlags0Offset = 0;
+constexpr std::size_t kFlags1Offset = 1;
+constexpr std::size_t kMuteLightOffset = 8;
+constexpr std::size_t kMuteControlOffset = 9;
 constexpr std::size_t kFlags38Offset = 38;
+constexpr uint8_t kMuteLightOff = 0;
+constexpr uint8_t kMuteLightOn = 1;
+constexpr uint8_t kMicMuteBit = 4;
 
 constexpr uint32_t crc32_table_entry(uint32_t index)
 {
@@ -94,9 +100,22 @@ void __not_in_flash_func(DualSenseOutputState::clear_motors)()
     set_bit(state_[kFlags38Offset], 2, true);
 }
 
+void __not_in_flash_func(DualSenseOutputState::set_mic_muted)(bool muted)
+{
+    set_bit(state_[kFlags1Offset], 0, true);
+    set_bit(state_[kFlags1Offset], 1, true);
+    state_[kMuteLightOffset] = muted ? kMuteLightOn : kMuteLightOff;
+    set_bit(state_[kMuteControlOffset], kMicMuteBit, muted);
+}
+
 bool __not_in_flash_func(DualSenseOutputState::motors_active)() const
 {
     return state_[kRumbleLeftOffset] != 0 || state_[kRumbleRightOffset] != 0;
+}
+
+bool __not_in_flash_func(DualSenseOutputState::mic_muted)() const
+{
+    return (state_[kMuteControlOffset] & (1u << kMicMuteBit)) != 0;
 }
 
 void __not_in_flash_func(DualSenseOutputState::copy_state_block)(

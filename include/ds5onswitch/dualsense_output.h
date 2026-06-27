@@ -23,7 +23,9 @@ public:
     void reset();
     void apply_haptics(const DualSenseHapticCommand &command);
     void clear_motors();
+    void set_mic_muted(bool muted);
     bool motors_active() const;
+    bool mic_muted() const;
     void copy_state_block(uint8_t *out, std::size_t size) const;
 
     DualSenseBtOutputReport build_report(uint8_t sequence) const;

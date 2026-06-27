@@ -224,6 +224,22 @@ void test_dualsense_bt_output_report()
     state.copy_state_block(state_block.data(), state_block.size());
     assert(state_block[4] == 0x78);
     assert(state_block[6] == 0x25);
+    assert(state_block[8] == 0x00);
+    assert((state_block[9] & 0x10) == 0);
+
+    state.set_mic_muted(true);
+    assert(state.mic_muted());
+    state.copy_state_block(state_block.data(), state_block.size());
+    assert((state_block[1] & 0x03) == 0x03);
+    assert(state_block[8] == 0x01);
+    assert((state_block[9] & 0x0f) == 0x0f);
+    assert((state_block[9] & 0x10) != 0);
+
+    state.set_mic_muted(false);
+    assert(!state.mic_muted());
+    state.copy_state_block(state_block.data(), state_block.size());
+    assert(state_block[8] == 0x00);
+    assert((state_block[9] & 0x10) == 0);
 
     DualSenseHapticCommand command{};
     command.left_pulse = 160;

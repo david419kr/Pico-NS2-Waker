@@ -65,7 +65,7 @@ float g_speaker_gain = kSpeakerPreGain;
 
 bool __not_in_flash_func(mic_enabled)()
 {
-    return g_connected && g_mic_streaming;
+    return g_connected && g_mic_streaming && !g_mic_muted && g_mute[1] == 0;
 }
 
 void recompute_speaker_gain()
@@ -372,15 +372,22 @@ bool handle_set_entity(tusb_control_request_t const *request, uint8_t *buffer)
 
     const uint8_t index = entity_index(entity);
     switch (control) {
-    case AUDIO10_FU_CTRL_MUTE:
+    case AUDIO10_FU_CTRL_MUTE: {
         if (request->wLength != 1) {
             return false;
         }
+        const bool was_mic_enabled = mic_enabled();
         g_mute[index] = buffer[0];
         if (index == 0) {
             recompute_speaker_gain();
+        } else if (was_mic_enabled != mic_enabled()) {
+            if (!mic_enabled()) {
+                clear_mic_queue();
+            }
+            (void)send_audio_status_report();
         }
         return true;
+    }
     case AUDIO10_FU_CTRL_VOLUME:
         if (request->wLength != 2) {
             return false;
@@ -471,7 +478,6 @@ void __not_in_flash_func(dualsense_audio_update_status)(
     g_connected = true;
     g_headphones_connected = input.headphones_connected;
     g_mic_connected = input.mic_connected;
-    g_mic_muted = input.mic_muted;
     g_external_mic_active = input.external_mic_active;
 }
 
@@ -483,6 +489,30 @@ void __not_in_flash_func(dualsense_audio_add_mic_frame)(const uint8_t *data,
     }
 
     push_mic_packet(data);
+}
+
+void __not_in_flash_func(dualsense_audio_set_mic_muted)(bool muted)
+{
+    if (g_mic_muted == muted) {
+        return;
+    }
+
+    g_mic_muted = muted;
+    if (g_mic_muted) {
+        clear_mic_queue();
+    }
+    (void)send_audio_status_report();
+}
+
+bool __not_in_flash_func(dualsense_audio_toggle_mic_muted)()
+{
+    dualsense_audio_set_mic_muted(!g_mic_muted);
+    return g_mic_muted;
+}
+
+bool __not_in_flash_func(dualsense_audio_mic_muted)()
+{
+    return g_mic_muted;
 }
 
 UsbAudioPersona __not_in_flash_func(dualsense_audio_desired_persona)()
