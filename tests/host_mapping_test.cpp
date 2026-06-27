@@ -338,6 +338,48 @@ void test_switch_usb_reports()
     assert(result.feedback.player_led_changed);
     assert(result.feedback.player_led_mask == 0x0f);
     assert(usb.player_led_mask() == 0x0f);
+
+    const uint8_t pairing_output[] = {
+        kSwitchOutputSubcommand, 0x08,
+        0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+        kSwitchSubcmdBtManualPairing,
+        0x01, 0x13, 0x64, 0xff, 0x05, 0x48, 0xc8,
+        0x3c, 0x04, 0x08,
+        'N', 'i', 'n', 't', 'e', 'n', 'd', 'o', ' ',
+        'S', 'w', 'i', 't', 'c', 'h',
+    };
+    const SwitchUsbOutputResult pairing =
+        usb.handle_output_report(pairing_output, sizeof(pairing_output));
+    assert(pairing.has_reply);
+    assert(pairing.has_switch2_console_addr);
+    const uint8_t expected_addr[] = {0x13, 0x64, 0xff, 0x05, 0x48, 0xc8};
+    assert(std::memcmp(pairing.switch2_console_addr_wire, expected_addr,
+                       sizeof(expected_addr)) == 0);
+
+    // Manual-pairing phase that lacks the console name must not be treated as a
+    // wake target (anti false positive).
+    const uint8_t pairing_no_name[] = {
+        kSwitchOutputSubcommand, 0x09,
+        0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+        kSwitchSubcmdBtManualPairing,
+        0x01, 0x13, 0x64, 0xff, 0x05, 0x48, 0xc8,
+    };
+    const SwitchUsbOutputResult pairing_no_name_result =
+        usb.handle_output_report(pairing_no_name, sizeof(pairing_no_name));
+    assert(!pairing_no_name_result.has_switch2_console_addr);
+
+    // A non-pairing subcommand never yields a wake target.
+    const uint8_t device_info_output[] = {
+        kSwitchOutputSubcommand, 0x0a,
+        0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+        kSwitchSubcmdRequestDeviceInfo,
+    };
+    const SwitchUsbOutputResult device_info_result =
+        usb.handle_output_report(device_info_output, sizeof(device_info_output));
+    assert(!device_info_result.has_switch2_console_addr);
 }
 
 } // namespace

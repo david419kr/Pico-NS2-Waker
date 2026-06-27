@@ -48,6 +48,11 @@ struct SwitchUsbFeedback {
 struct SwitchUsbOutputResult {
     bool has_reply = false;
     bool queue_full_report = false;
+    // Set when a BT manual-pairing subcommand carried the paired Switch console
+    // Bluetooth address. The bytes are in HID/USB wire order (little-endian
+    // BD_ADDR), matching what the BLE wake advertisement embeds verbatim.
+    bool has_switch2_console_addr = false;
+    uint8_t switch2_console_addr_wire[6]{};
     SwitchReport reply{};
     SwitchUsbFeedback feedback{};
 };

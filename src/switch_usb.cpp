@@ -10,6 +10,10 @@ namespace ds5onswitch {
 namespace {
 
 constexpr uint8_t kSwitchProMac[6] = {0x00, 0x1b, 0x7a, 0x01, 0x02, 0x03};
+constexpr uint8_t kNintendoSwitchName[] = {
+    'N', 'i', 'n', 't', 'e', 'n', 'd', 'o', ' ',
+    'S', 'w', 'i', 't', 'c', 'h',
+};
 
 void put_u16_le(uint8_t *out, uint16_t value)
 {
@@ -36,6 +40,60 @@ uint32_t get_u32_le(const uint8_t *in)
            (static_cast<uint32_t>(in[1]) << 8u) |
            (static_cast<uint32_t>(in[2]) << 16u) |
            (static_cast<uint32_t>(in[3]) << 24u);
+}
+
+bool is_valid_addr_wire(const uint8_t addr[6])
+{
+    bool any_nonzero = false;
+    bool any_not_ff = false;
+    for (std::size_t i = 0; i < 6; ++i) {
+        any_nonzero = any_nonzero || addr[i] != 0x00u;
+        any_not_ff = any_not_ff || addr[i] != 0xffu;
+    }
+    return any_nonzero && any_not_ff;
+}
+
+bool contains_nintendo_switch_name(const uint8_t *data, std::size_t size)
+{
+    if (data == nullptr || size < sizeof(kNintendoSwitchName)) {
+        return false;
+    }
+
+    for (std::size_t i = 0; i <= size - sizeof(kNintendoSwitchName); ++i) {
+        if (std::memcmp(data + i, kNintendoSwitchName,
+                        sizeof(kNintendoSwitchName)) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool extract_switch2_console_addr_from_manual_pairing(const uint8_t *args,
+                                                      std::size_t args_size,
+                                                      uint8_t out_addr_wire[6])
+{
+    if (args == nullptr || out_addr_wire == nullptr || args_size < 7) {
+        return false;
+    }
+
+    const uint8_t phase = args[0];
+    if (phase != 0x01u && phase != 0x04u) {
+        return false;
+    }
+
+    if (!is_valid_addr_wire(&args[1])) {
+        return false;
+    }
+
+    // Third-party Switch Pro 1 wired-pairing captures include the console name
+    // after the address. Keep this as an anti-false-positive guard so ordinary
+    // 0x01 phases from non-Switch hosts do not overwrite the wake target.
+    if (!contains_nintendo_switch_name(args, args_size)) {
+        return false;
+    }
+
+    std::memcpy(out_addr_wire, &args[1], 6);
+    return true;
 }
 
 void copy_window(uint8_t *out, std::size_t out_len, uint32_t address,
@@ -360,6 +418,11 @@ SwitchUsbOutputResult SwitchUsbEmulator::handle_output_report(const uint8_t *dat
             const uint8_t subcommand = data[10];
             const uint8_t *args = size > 11 ? &data[11] : nullptr;
             const std::size_t args_size = size > 11 ? size - 11 : 0;
+            if (subcommand == kSwitchSubcmdBtManualPairing &&
+                extract_switch2_console_addr_from_manual_pairing(
+                    args, args_size, result.switch2_console_addr_wire)) {
+                result.has_switch2_console_addr = true;
+            }
             handle_subcommand_state(subcommand, args, args_size, result.feedback);
             if (build_subcommand_reply(subcommand, args, args_size, result.reply)) {
                 result.has_reply = true;
