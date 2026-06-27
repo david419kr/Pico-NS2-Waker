@@ -9,8 +9,6 @@ namespace {
 
 constexpr int32_t kSwitchAccelCountsPerG = 4096;
 constexpr int32_t kDualSenseAccelCountsPerG = 8192;
-constexpr int32_t kSwitchGyroMilliCountsPerDps = 14247;
-constexpr int32_t kDualSenseGyroCountsPerDps = 1024;
 constexpr uint32_t kSwitchStickAxisMax = 0x0fffu;
 
 constexpr int16_t clamp_i16(int32_t value)
@@ -75,10 +73,7 @@ int16_t dualsense_accel_to_switch(int16_t value)
 
 int16_t dualsense_gyro_to_switch(int16_t value)
 {
-    const int32_t scaled =
-        (static_cast<int32_t>(value) * kSwitchGyroMilliCountsPerDps) /
-        (kDualSenseGyroCountsPerDps * 1000);
-    return clamp_i16(scaled);
+    return value;
 }
 
 SwitchProState map_dualsense_to_switch(const DualSenseInput &input,

@@ -63,6 +63,8 @@ void test_axis_and_motion_mapping()
     assert(axis8_to_switch12(0) == 0);
     assert(axis8_to_switch12(255) == 0x0fff);
     assert(axis8_to_switch12(128) >= 0x800);
+    assert(dualsense_gyro_to_switch(1024) == 1024);
+    assert(dualsense_gyro_to_switch(-2048) == -2048);
 
     DualSenseInput in{};
     in.left_x = 0;
