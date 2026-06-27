@@ -11,3 +11,4 @@ build/
 *.exe
 .codebase-memory/
 AGENTS.md
+docs/
