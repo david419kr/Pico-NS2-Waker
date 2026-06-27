@@ -1,4 +1,4 @@
-# DS5onSwitch
+# DualSense on Switch
 
 Raspberry Pi Pico 2 W firmware for using a Sony DualSense as a Nintendo Switch 1 Pro Controller.
 
