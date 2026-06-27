@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstring>
 
 namespace ds5onswitch {
@@ -23,10 +24,15 @@ constexpr uint8_t kAudioReportId = 0x36;
 constexpr uint8_t kAudioStatusReportId = 0x32;
 constexpr uint8_t kAudioBufferLength = 64;
 constexpr uint8_t kHapticBytesPerReport = 64;
+constexpr uint8_t kSpeakerUsbChannels = 2;
+constexpr uint8_t kSpeakerOpusChannels = 2;
+constexpr uint16_t kSpeakerInputFrameSamples = 512;
 constexpr uint16_t kOpusBytesPerReport = 200;
 constexpr uint16_t kOpusFrameSamples = 480;
 constexpr uint16_t kMicOpusBytes = 71;
 constexpr uint8_t kMicQueueDepth = 4;
+constexpr uint8_t kSpeakerReadBurstsPerLoop = 4;
+constexpr float kSpeakerPreGain = 5.0f;
 constexpr uint32_t kSpeakerStreamTimeoutMs = 2000;
 
 struct MicPacket {
@@ -43,8 +49,10 @@ bool g_mic_streaming = false;
 uint8_t g_report_sequence = 0;
 uint8_t g_packet_counter = 0;
 uint32_t g_last_speaker_audio_ms = 0;
-std::array<int16_t, kOpusFrameSamples * 2u> g_pcm_frame{};
-uint16_t g_pcm_frames = 0;
+std::array<float, kSpeakerInputFrameSamples * kSpeakerOpusChannels>
+    g_speaker_input_frame{};
+uint16_t g_speaker_input_frames = 0;
+std::array<float, kOpusFrameSamples * kSpeakerOpusChannels> g_pcm_frame{};
 std::array<MicPacket, kMicQueueDepth> g_mic_queue{};
 uint8_t g_mic_head = 0;
 uint8_t g_mic_tail = 0;
@@ -53,10 +61,22 @@ OpusEncoder *g_encoder = nullptr;
 OpusDecoder *g_decoder = nullptr;
 uint8_t g_mute[2] = {0, 0};
 int16_t g_volume[2] = {0, 0};
+float g_speaker_gain = kSpeakerPreGain;
 
 bool __not_in_flash_func(mic_enabled)()
 {
     return g_connected && g_mic_streaming;
+}
+
+void recompute_speaker_gain()
+{
+    if (g_mute[0] != 0) {
+        g_speaker_gain = 0.0f;
+        return;
+    }
+
+    const float db = static_cast<float>(g_volume[0]) / 256.0f;
+    g_speaker_gain = kSpeakerPreGain * powf(10.0f, db / 20.0f);
 }
 
 void __not_in_flash_func(clear_mic_queue)()
@@ -92,13 +112,40 @@ void __not_in_flash_func(push_mic_packet)(const uint8_t *data)
 
 void __not_in_flash_func(drain_speaker_audio)()
 {
-    uint8_t raw[256];
+    uint8_t raw[512];
     while (tud_audio_available() != 0) {
         if (tud_audio_read(raw, sizeof(raw)) == 0) {
             break;
         }
     }
-    g_pcm_frames = 0;
+    g_speaker_input_frames = 0;
+}
+
+void __not_in_flash_func(resample_speaker_frame_512_to_480)()
+{
+    constexpr uint32_t kResampleStepQ16 =
+        (static_cast<uint32_t>(kSpeakerInputFrameSamples) << 16u) /
+        kOpusFrameSamples;
+    uint32_t position_q16 = 0;
+
+    for (uint16_t dst = 0; dst < kOpusFrameSamples; ++dst) {
+        uint16_t src = static_cast<uint16_t>(position_q16 >> 16u);
+        if (src >= kSpeakerInputFrameSamples - 1u) {
+            src = kSpeakerInputFrameSamples - 2u;
+        }
+
+        const uint32_t frac = position_q16 & 0xffffu;
+        for (uint8_t ch = 0; ch < kSpeakerOpusChannels; ++ch) {
+            const float a =
+                g_speaker_input_frame[src * kSpeakerOpusChannels + ch];
+            const float b =
+                g_speaker_input_frame[(src + 1u) * kSpeakerOpusChannels + ch];
+            g_pcm_frame[dst * kSpeakerOpusChannels + ch] =
+                a + (b - a) * (static_cast<float>(frac) / 65536.0f);
+        }
+
+        position_q16 += kResampleStepQ16;
+    }
 }
 
 bool __not_in_flash_func(encode_opus_frame)(uint8_t *out)
@@ -108,9 +155,9 @@ bool __not_in_flash_func(encode_opus_frame)(uint8_t *out)
     }
 
     std::fill(out, out + kOpusBytesPerReport, 0);
-    const int encoded = opus_encode(g_encoder, g_pcm_frame.data(),
-                                    kOpusFrameSamples, out,
-                                    kOpusBytesPerReport);
+    const int encoded = opus_encode_float(g_encoder, g_pcm_frame.data(),
+                                          kOpusFrameSamples, out,
+                                          kOpusBytesPerReport);
     return encoded > 0;
 }
 
@@ -164,27 +211,30 @@ bool __not_in_flash_func(send_speaker_report)(const DualSenseOutputState &state,
     return dualsense_bt_send_raw_output_report(report.data(), report.size());
 }
 
-void __not_in_flash_func(append_speaker_frames)(
+void __not_in_flash_func(append_speaker_usb_frames)(
     const int16_t *samples, uint16_t frames, const DualSenseOutputState &state,
     uint8_t &report_sequence)
 {
     uint16_t src_frame = 0;
     while (src_frame < frames) {
-        const uint16_t room =
-            static_cast<uint16_t>(kOpusFrameSamples - g_pcm_frames);
-        const uint16_t copy_frames =
-            std::min<uint16_t>(room, static_cast<uint16_t>(frames - src_frame));
+        g_speaker_input_frame[g_speaker_input_frames * kSpeakerOpusChannels] =
+            std::clamp(static_cast<float>(
+                           samples[src_frame * kSpeakerUsbChannels]) /
+                           32768.0f * g_speaker_gain,
+                       -1.0f, 1.0f);
+        g_speaker_input_frame[g_speaker_input_frames * kSpeakerOpusChannels +
+                              1u] =
+            std::clamp(static_cast<float>(
+                           samples[src_frame * kSpeakerUsbChannels + 1u]) /
+                           32768.0f * g_speaker_gain,
+                       -1.0f, 1.0f);
+        ++g_speaker_input_frames;
+        ++src_frame;
 
-        std::memcpy(g_pcm_frame.data() + g_pcm_frames * 2u,
-                    samples + src_frame * 2u,
-                    static_cast<std::size_t>(copy_frames) * 2u *
-                        sizeof(int16_t));
-        g_pcm_frames = static_cast<uint16_t>(g_pcm_frames + copy_frames);
-        src_frame = static_cast<uint16_t>(src_frame + copy_frames);
-
-        if (g_pcm_frames == kOpusFrameSamples) {
+        if (g_speaker_input_frames == kSpeakerInputFrameSamples) {
+            resample_speaker_frame_512_to_480();
             (void)send_speaker_report(state, report_sequence);
-            g_pcm_frames = 0;
+            g_speaker_input_frames = 0;
         }
     }
 }
@@ -202,22 +252,28 @@ void __not_in_flash_func(service_speaker)(const DualSenseOutputState &state,
     if (tud_audio_available() == 0) {
         if (g_last_speaker_audio_ms != 0 &&
             board_millis() - g_last_speaker_audio_ms > kSpeakerStreamTimeoutMs) {
-            g_pcm_frames = 0;
+            g_speaker_input_frames = 0;
             g_last_speaker_audio_ms = 0;
         }
         return;
     }
 
-    int16_t raw[128]{};
-    const uint16_t bytes_read = tud_audio_read(raw, sizeof(raw));
-    const uint16_t frames = static_cast<uint16_t>(
-        bytes_read / (2u * sizeof(int16_t)));
-    if (frames == 0) {
-        return;
-    }
+    for (uint8_t burst = 0; burst < kSpeakerReadBurstsPerLoop; ++burst) {
+        int16_t raw[256]{};
+        const uint16_t bytes_read = tud_audio_read(raw, sizeof(raw));
+        const uint16_t frames = static_cast<uint16_t>(
+            bytes_read / (kSpeakerUsbChannels * sizeof(int16_t)));
+        if (frames == 0) {
+            break;
+        }
 
-    g_last_speaker_audio_ms = board_millis();
-    append_speaker_frames(raw, frames, state, report_sequence);
+        g_last_speaker_audio_ms = board_millis();
+        append_speaker_usb_frames(raw, frames, state, report_sequence);
+
+        if (tud_audio_available() == 0) {
+            break;
+        }
+    }
 }
 
 void __not_in_flash_func(service_mic)()
@@ -321,12 +377,18 @@ bool handle_set_entity(tusb_control_request_t const *request, uint8_t *buffer)
             return false;
         }
         g_mute[index] = buffer[0];
+        if (index == 0) {
+            recompute_speaker_gain();
+        }
         return true;
     case AUDIO10_FU_CTRL_VOLUME:
         if (request->wLength != 2) {
             return false;
         }
         std::memcpy(&g_volume[index], buffer, sizeof(g_volume[index]));
+        if (index == 0) {
+            recompute_speaker_gain();
+        }
         return true;
     default:
         return false;
@@ -398,7 +460,7 @@ void __not_in_flash_func(dualsense_audio_set_connected)(bool connected)
         g_external_mic_active = false;
         g_speaker_streaming = false;
         g_mic_streaming = false;
-        g_pcm_frames = 0;
+        g_speaker_input_frames = 0;
         clear_mic_queue();
     }
 }
@@ -437,6 +499,13 @@ UsbAudioPersona __not_in_flash_func(dualsense_audio_desired_persona)()
 bool __not_in_flash_func(dualsense_audio_speaker_streaming)()
 {
     return g_speaker_streaming && g_headphones_connected;
+}
+
+bool __not_in_flash_func(dualsense_audio_speaker_active)()
+{
+    return dualsense_audio_speaker_streaming() &&
+           g_last_speaker_audio_ms != 0 &&
+           board_millis() - g_last_speaker_audio_ms < 40u;
 }
 
 void __not_in_flash_func(dualsense_audio_loop)(const DualSenseOutputState &state,

@@ -15,8 +15,8 @@ Implemented runtime pieces:
    - no DualSense: USB device hidden, no Switch Pro Controller exposed.
    - DualSense connected, no headset: HID + USB microphone.
    - DualSense headset jack active: HID + USB stereo output + USB microphone.
-7. DualSense headset audio output: USB 48 kHz stereo PCM is encoded to Opus and sent over Bluetooth in DualSense `0x36` speaker/headset reports.
-8. DualSense microphone input: Bluetooth `0x31` mic Opus frames are decoded and exposed through the USB Audio IN endpoint.
+7. DualSense headset audio output: USB 48 kHz stereo PCM OUT is resampled from 512 stereo frames to 480 frames, encoded to 200-byte Opus with the float Opus API, and sent over Bluetooth in DualSense `0x36` headset reports.
+8. DualSense microphone input: Bluetooth `0x31` mic Opus frames are decoded and exposed through the USB Audio IN endpoint, with a reduced default DualSense mic volume.
 9. BOOTSEL button gestures:
    - short press disconnects the current controller if connected, or starts a 30-second pairing scan if disconnected.
    - double press reboots the Pico into the firmware.

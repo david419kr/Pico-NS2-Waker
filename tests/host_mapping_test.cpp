@@ -5,6 +5,7 @@
 #include "ds5onswitch/switch_pro.h"
 #include "ds5onswitch/switch_usb.h"
 
+#include <array>
 #include <cassert>
 #include <cstdint>
 #include <cstring>
@@ -188,6 +189,11 @@ void test_dualsense_bt_output_report()
     DualSenseOutputState state;
     state.reset();
     assert(!state.motors_active());
+
+    std::array<uint8_t, kDualSenseOutputStateBlockSize> state_block{};
+    state.copy_state_block(state_block.data(), state_block.size());
+    assert(state_block[4] == 0x78);
+    assert(state_block[6] == 0x25);
 
     DualSenseHapticCommand command{};
     command.left_pulse = 160;

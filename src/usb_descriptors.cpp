@@ -29,7 +29,8 @@ constexpr uint8_t kEndpointHid = 0x01;
 constexpr uint8_t kEndpointAudioOut = 0x02;
 constexpr uint8_t kEndpointAudioIn = 0x83;
 
-constexpr uint16_t kAudioPacketSize = 196;
+constexpr uint16_t kAudioOutPacketSize = 196;
+constexpr uint16_t kAudioInPacketSize = 196;
 constexpr uint16_t kConfigLenHidOnly =
     TUD_CONFIG_DESC_LEN + TUD_HID_INOUT_DESC_LEN;
 constexpr uint16_t kConfigLenMicOnly =
@@ -123,7 +124,7 @@ uint8_t const kMicOnlyConfigurationDescriptor[] = {
 
     0x09, TUSB_DESC_ENDPOINT,
     kEndpointAudioIn, 0x05,
-    U16_TO_U8S_LE(kAudioPacketSize), 0x01, 0x00, 0x00,
+    U16_TO_U8S_LE(kAudioInPacketSize), 0x01, 0x00, 0x00,
 
     0x07, TUSB_DESC_CS_ENDPOINT, AUDIO10_CS_EP_SUBTYPE_GENERAL,
     0x00, 0x00, 0x00, 0x00,
@@ -182,7 +183,7 @@ uint8_t const kHeadsetConfigurationDescriptor[] = {
 
     0x09, TUSB_DESC_ENDPOINT,
     kEndpointAudioOut, 0x09,
-    U16_TO_U8S_LE(kAudioPacketSize), 0x01, 0x00, 0x00,
+    U16_TO_U8S_LE(kAudioOutPacketSize), 0x01, 0x00, 0x00,
 
     0x07, TUSB_DESC_CS_ENDPOINT, AUDIO10_CS_EP_SUBTYPE_GENERAL,
     0x00, 0x00, 0x00, 0x00,
@@ -205,11 +206,15 @@ uint8_t const kHeadsetConfigurationDescriptor[] = {
 
     0x09, TUSB_DESC_ENDPOINT,
     kEndpointAudioIn, 0x05,
-    U16_TO_U8S_LE(kAudioPacketSize), 0x01, 0x00, 0x00,
+    U16_TO_U8S_LE(kAudioInPacketSize), 0x01, 0x00, 0x00,
 
     0x07, TUSB_DESC_CS_ENDPOINT, AUDIO10_CS_EP_SUBTYPE_GENERAL,
     0x00, 0x00, 0x00, 0x00,
 };
+
+static_assert(sizeof(kHidOnlyConfigurationDescriptor) == kConfigLenHidOnly);
+static_assert(sizeof(kMicOnlyConfigurationDescriptor) == kConfigLenMicOnly);
+static_assert(sizeof(kHeadsetConfigurationDescriptor) == kConfigLenHeadset);
 
 char const *const kStringDescriptor[] = {
     "",

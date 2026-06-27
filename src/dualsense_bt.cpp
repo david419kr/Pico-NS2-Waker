@@ -21,7 +21,7 @@ namespace {
 
 constexpr uint16_t kMtuControl = 672;
 constexpr uint16_t kMtuInterrupt = 672;
-constexpr std::size_t kSendQueueDepth = 8;
+constexpr std::size_t kSendQueueDepth = 10;
 constexpr std::size_t kSendPacketSize = kDualSenseBtAudioReportSize + 1u;
 constexpr uint32_t kBlacklistTlvTag = 0x424c434bu; // ASCII 'BLCK'
 constexpr uint32_t kBlacklistPersistDelayMs = 5000;
@@ -523,7 +523,6 @@ bool __not_in_flash_func(dualsense_bt_send_raw_output_report)(
     std::memcpy(element.data + 1, report, size);
 
     if (!queue_try_add(&g_send_fifo, &element)) {
-        std::printf("[BT] output queue full\n");
         return false;
     }
 

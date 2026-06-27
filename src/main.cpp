@@ -150,6 +150,12 @@ void __not_in_flash_func(service_dualsense_output)()
         g_ds_output_dirty = true;
     }
 
+    if (dualsense_audio_speaker_active()) {
+        g_last_ds_output_ms = now;
+        g_ds_output_dirty = false;
+        return;
+    }
+
     if (!g_ds_output_dirty &&
         (!g_ds_output.motors_active() || now - g_last_ds_output_ms < 20u)) {
         return;
