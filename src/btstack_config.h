@@ -23,6 +23,9 @@
 // LE peripheral role is used only to emit the Switch 2 wake advertisement and
 // to tolerate the brief connection the console opens before terminating it.
 #define ENABLE_LE_PERIPHERAL
+// pico_btstack_ble builds the ATT DB helper even though wake-only advertising
+// does not register GATT services. Keep the static DB tiny but defined.
+#define MAX_ATT_DB_SIZE 16
 
 #define ENABLE_PRINTF_HEXDUMP
 #define ENABLE_LOG_ERROR

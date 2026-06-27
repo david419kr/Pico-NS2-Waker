@@ -56,6 +56,7 @@ add_executable(ds5onswitch
     src/dualsense_bt.cpp
     src/main.cpp
     src/ram_mem.c
+    src/switch2_wake_runtime.cpp
     src/usb_descriptors.cpp
 )
 
