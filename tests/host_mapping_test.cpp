@@ -308,7 +308,7 @@ void test_switch_usb_reports()
     assert(report[20] == 0xcf);
     assert(report[21] == 0x67);
     assert(report[25] == 0x01);
-    assert(report[26] == 0x01);
+    assert(report[26] == 0x03);
 
     const uint8_t pairing_request_addr[] = {0x01};
     assert(usb.build_subcommand_reply(kSwitchSubcmdBtManualPairing,
@@ -323,6 +323,30 @@ void test_switch_usb_reports()
     assert(report[19] == 0x67);
     assert(report[20] == 0xcf);
     assert(report[21] == 0x2c);
+    assert(report[23] == 0x25);
+    assert(report[24] == 0x08);
+    assert(std::memcmp(&report[25], "Pro Controller", 14) == 0);
+
+    const uint8_t pairing_request_material[] = {0x02};
+    assert(usb.build_subcommand_reply(kSwitchSubcmdBtManualPairing,
+                                      pairing_request_material,
+                                      sizeof(pairing_request_material), report));
+    const uint8_t expected_material[] = {
+        0xeb, 0xe0, 0xf9, 0xf6, 0xcc, 0xda, 0xd0, 0x2e,
+        0x25, 0x30, 0x0f, 0x1f, 0x6f, 0x7f, 0x4c, 0x5d,
+    };
+    assert(report[15] == 0x02);
+    assert(std::memcmp(&report[16], expected_material,
+                       sizeof(expected_material)) == 0);
+
+    const uint8_t pairing_request_done[] = {0x04};
+    assert(usb.build_subcommand_reply(kSwitchSubcmdBtManualPairing,
+                                      pairing_request_done,
+                                      sizeof(pairing_request_done), report));
+    assert(report[15] == 0x03);
+    for (std::size_t i = 16; i < report.size(); ++i) {
+        assert(report[i] == 0x00);
+    }
 
     uint8_t spi_args[5] = {0x20, 0x60, 0x00, 0x00, 0x18};
     assert(usb.build_subcommand_reply(kSwitchSubcmdSpiRead, spi_args,

@@ -201,31 +201,42 @@ void fill_factory_parameters(uint8_t *block, std::size_t block_len,
 std::size_t manual_pairing_payload(const uint8_t *args, std::size_t args_size,
                                    uint8_t *out, std::size_t out_size)
 {
-    if (out_size == 0) {
+    constexpr std::size_t kPairingPayloadLen = 49;
+    static const uint8_t kPairingMaterial[16] = {
+        0xeb, 0xe0, 0xf9, 0xf6, 0xcc, 0xda, 0xd0, 0x2e,
+        0x25, 0x30, 0x0f, 0x1f, 0x6f, 0x7f, 0x4c, 0x5d,
+    };
+    static const uint8_t kControllerName[] = {
+        'P', 'r', 'o', ' ', 'C', 'o', 'n', 't', 'r', 'o', 'l', 'l', 'e', 'r',
+    };
+
+    if (out_size < kPairingPayloadLen) {
         return 0;
     }
 
     const uint8_t request = args != nullptr && args_size >= 1 ? args[0] : 0;
     std::memset(out, 0, out_size);
-    out[0] = request;
     switch (request) {
     case 0x01:
-        if (out_size < 7) {
-            return 0;
-        }
+        out[0] = 0x01;
         for (std::size_t i = 0; i < kSwitchProControllerBdAddr.size(); ++i) {
             out[1u + i] =
                 kSwitchProControllerBdAddr[kSwitchProControllerBdAddr.size() - 1u - i];
         }
-        return 7;
+        out[8] = 0x25;
+        out[9] = 0x08;
+        std::memcpy(&out[10], kControllerName, sizeof(kControllerName));
+        return kPairingPayloadLen;
     case 0x02:
-        if (out_size < 17) {
-            return 0;
-        }
-        std::memset(&out[1], 0xaa, 16);
-        return 17;
+        out[0] = 0x02;
+        std::memcpy(&out[1], kPairingMaterial, sizeof(kPairingMaterial));
+        return kPairingPayloadLen;
     case 0x03:
+    case 0x04:
+        out[0] = 0x03;
+        return kPairingPayloadLen;
     default:
+        out[0] = request;
         return 1;
     }
 }
@@ -340,7 +351,7 @@ bool SwitchUsbEmulator::build_subcommand_reply(uint8_t subcommand,
         std::memcpy(payload + sizeof(prefix), kSwitchProControllerBdAddr.data(),
                     kSwitchProControllerBdAddr.size());
         payload[10] = 0x01;
-        payload[11] = 0x01;
+        payload[11] = 0x03;
         payload_len = 12;
         break;
     }
