@@ -5,6 +5,7 @@
 #include "ds5onswitch/dualsense_output.h"
 #include "ds5onswitch/dualsense_report.h"
 #include "ds5onswitch/switch_usb.h"
+#include "ds5onswitch/switch2_wake_runtime.h"
 #include "ds5onswitch/usb_descriptors.h"
 
 #include "bsp/board_api.h"
@@ -32,6 +33,16 @@ UsbAudioPersona g_usb_persona = UsbAudioPersona::HidOnly;
 bool g_usb_reconnect_pending = false;
 uint32_t g_usb_reconnect_at_ms = 0;
 bool g_ds_mute_button_down = false;
+bool g_usb_unmounted = false;
+uint32_t g_usb_unmounted_since_ms = 0;
+uint32_t g_last_ds_buttons = 0;
+bool g_home_wake_pending = false;
+uint32_t g_home_wake_pending_ms = 0;
+bool g_auto_wake_armed = false;
+uint32_t g_ds_connected_since_ms = 0;
+
+constexpr uint32_t kUsbUnmountDebounceMs = 1000;
+constexpr uint32_t kHomeWakePendingWindowMs = 3000;
 
 void push_pending(const SwitchReport &report)
 {
@@ -77,6 +88,14 @@ void __not_in_flash_func(on_dualsense_bt_data)(DualSenseBtChannel channel,
     DualSenseInput input{};
     if (!parse_dualsense_bt_report(data, size, input)) {
         return;
+    }
+
+    const bool home_down = (input.buttons & kDs5Ps) != 0;
+    const bool home_edge = home_down && (g_last_ds_buttons & kDs5Ps) == 0;
+    g_last_ds_buttons = input.buttons;
+    if (home_edge) {
+        g_home_wake_pending = true;
+        g_home_wake_pending_ms = board_millis();
     }
 
     const bool mute_button_down = (input.buttons & kDs5Mute) != 0;
@@ -131,6 +150,8 @@ void __not_in_flash_func(service_dualsense_connection)()
 
     if (!connected) {
         g_ds_mute_button_down = false;
+        g_last_ds_buttons = 0;
+        g_auto_wake_armed = false;
         g_usb_reconnect_pending = false;
         g_usb_persona = UsbAudioPersona::HidOnly;
         usb_descriptors_set_audio_persona(g_usb_persona);
@@ -147,6 +168,63 @@ void __not_in_flash_func(service_dualsense_connection)()
     tud_disconnect();
     g_usb_reconnect_pending = true;
     g_usb_reconnect_at_ms = board_millis() + 250u;
+    g_auto_wake_armed = true;
+    g_ds_connected_since_ms = board_millis();
+}
+
+void __not_in_flash_func(service_usb_mount_tracking)()
+{
+    const uint32_t now = board_millis();
+    if (tud_mounted()) {
+        g_usb_unmounted = false;
+        g_usb_unmounted_since_ms = 0;
+        return;
+    }
+
+    if (!g_usb_unmounted) {
+        g_usb_unmounted = true;
+        g_usb_unmounted_since_ms = now;
+    }
+}
+
+bool __not_in_flash_func(usb_sleep_candidate)(uint32_t now)
+{
+    return g_usb_unmounted && !g_usb_reconnect_pending &&
+           now - g_usb_unmounted_since_ms >= kUsbUnmountDebounceMs;
+}
+
+void __not_in_flash_func(service_switch2_wake_policy)()
+{
+    const uint32_t now = board_millis();
+    const bool mounted = tud_mounted();
+
+    if (mounted) {
+        g_home_wake_pending = false;
+        g_auto_wake_armed = false;
+    }
+
+    if (g_home_wake_pending) {
+        if (mounted ||
+            now - g_home_wake_pending_ms > kHomeWakePendingWindowMs) {
+            g_home_wake_pending = false;
+        } else if (usb_sleep_candidate(now) && switch2_wake_has_target()) {
+            g_home_wake_pending = false;
+            g_auto_wake_armed = false;
+            (void)switch2_wake_request();
+        }
+    }
+
+    if (g_auto_wake_armed && dualsense_bt_is_connected()) {
+        if (mounted) {
+            g_auto_wake_armed = false;
+        } else if (now - g_ds_connected_since_ms >= kUsbUnmountDebounceMs &&
+                   usb_sleep_candidate(now) && switch2_wake_has_target()) {
+            g_auto_wake_armed = false;
+            (void)switch2_wake_request();
+        }
+    }
+
+    switch2_wake_service(mounted);
 }
 
 void __not_in_flash_func(service_dualsense_output)()
@@ -267,7 +345,9 @@ void __no_inline_not_in_flash_func(app_loop)()
 
         cyw43_arch_poll();
         tud_task();
+        service_usb_mount_tracking();
         service_dualsense_connection();
+        service_switch2_wake_policy();
         dualsense_audio_loop(g_ds_output, g_ds_output_sequence);
         service_dualsense_output();
         service_usb_reports();
@@ -298,6 +378,7 @@ int main()
     g_ds_output.reset();
     usb_descriptors_set_audio_persona(UsbAudioPersona::HidOnly);
     dualsense_audio_init();
+    switch2_wake_init();
     dualsense_bt_register_data_callback(on_dualsense_bt_data);
 
     DualSenseInput neutral{};
@@ -367,6 +448,10 @@ extern "C" void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id,
 
     const SwitchUsbOutputResult result =
         g_switch_usb.handle_output_report(report.data(), size);
+    if (result.has_switch2_console_addr) {
+        switch2_wake_set_target_from_usb_pairing(
+            result.switch2_console_addr_wire);
+    }
     apply_switch_feedback(result.feedback);
     if (result.has_reply) {
         push_pending(result.reply);
