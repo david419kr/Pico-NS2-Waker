@@ -60,7 +60,7 @@ The Pico 2 W BOOTSEL button can be used for these actions.
 
 | Action | Behavior |
 | --- | --- |
-| 1 click | Toggle normal LED display on/off |
+| 1 click | Toggle normal LED display on/off. This setting is remembered after power-off. |
 | 2 clicks | Disconnect the current controller, or start a 30-second pairing scan if no controller is connected |
 | 3 clicks | Reboot the firmware |
 | 4 clicks | Reboot into USB drive mode |

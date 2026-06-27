@@ -2,6 +2,8 @@
 
 #include "ds5onswitch/dualsense_bt.h"
 
+#include "btstack_tlv.h"
+
 #include "hardware/gpio.h"
 #include "hardware/structs/ioqspi.h"
 #include "hardware/structs/sio.h"
@@ -25,6 +27,7 @@ namespace {
 constexpr uint32_t POLL_INTERVAL_MS = 20;
 constexpr int HOLD_SAMPLES = 1500 / POLL_INTERVAL_MS;
 constexpr int CLICK_WINDOW_SAMPLES = 500 / POLL_INTERVAL_MS;
+constexpr uint32_t kNormalLedTlvTag = 0x4c454431u; // ASCII 'LED1'
 
 // FSM: 0 idle, 1 pressing (counting for hold), 2 held (fired), 3 wait-for-next-click.
 int button_fsm = 0;
@@ -34,6 +37,8 @@ int button_click_count = 0;
 uint32_t button_last_check_ms = 0;
 bool button_hold_pending = false;
 bool button_normal_led_enabled = true;
+bool button_normal_led_loaded = false;
+bool button_normal_led_dirty = false;
 
 int button_clear_flash_toggles_remaining = 0;
 uint32_t button_clear_flash_last_toggle_ms = 0;
@@ -71,6 +76,65 @@ bool read_bootsel()
     return rc == PICO_OK && pressed;
 }
 
+bool button_get_tlv(const btstack_tlv_t *&tlv, void *&tlv_context)
+{
+    tlv = nullptr;
+    tlv_context = nullptr;
+    btstack_tlv_get_instance(&tlv, &tlv_context);
+    return tlv != nullptr;
+}
+
+void button_load_normal_led()
+{
+    if (button_normal_led_loaded || button_normal_led_dirty) {
+        return;
+    }
+
+    const btstack_tlv_t *tlv = nullptr;
+    void *tlv_context = nullptr;
+    if (!button_get_tlv(tlv, tlv_context)) {
+        return;
+    }
+
+    uint8_t value = 1;
+    const int len = tlv->get_tag(tlv_context, kNormalLedTlvTag, &value,
+                                 sizeof(value));
+    if (len == static_cast<int>(sizeof(value))) {
+        button_normal_led_enabled = value != 0;
+        std::printf("[BTN] Loaded normal LED %s\n",
+                    button_normal_led_enabled ? "enabled" : "disabled");
+    }
+    button_normal_led_loaded = true;
+}
+
+bool button_persist_normal_led()
+{
+    const btstack_tlv_t *tlv = nullptr;
+    void *tlv_context = nullptr;
+    if (!button_get_tlv(tlv, tlv_context)) {
+        return false;
+    }
+
+    const uint8_t value = button_normal_led_enabled ? 1u : 0u;
+    const int rc = tlv->store_tag(tlv_context, kNormalLedTlvTag, &value,
+                                  sizeof(value));
+    if (rc == 0) {
+        button_normal_led_dirty = false;
+        button_normal_led_loaded = true;
+    }
+    std::printf("[BTN] Persisted normal LED %s, rc=%d\n",
+                button_normal_led_enabled ? "enabled" : "disabled", rc);
+    return rc == 0;
+}
+
+void button_service_normal_led_storage()
+{
+    button_load_normal_led();
+    if (button_normal_led_dirty) {
+        (void)button_persist_normal_led();
+    }
+}
+
 void reboot_to_app()
 {
     std::printf("[BTN] BOOTSEL triple click - reboot\n");
@@ -90,8 +154,10 @@ void reboot_to_bootsel()
 void button_toggle_normal_led()
 {
     button_normal_led_enabled = !button_normal_led_enabled;
+    button_normal_led_dirty = true;
     std::printf("[BTN] BOOTSEL single click - normal LED %s\n",
                 button_normal_led_enabled ? "enabled" : "disabled");
+    (void)button_persist_normal_led();
 }
 
 void button_start_clear_flash()
@@ -126,6 +192,7 @@ void __not_in_flash_func(bootsel_button_task)()
         return;
     }
     button_last_check_ms = now;
+    button_service_normal_led_storage();
 
     const bool pressed = read_bootsel();
     switch (button_fsm) {
