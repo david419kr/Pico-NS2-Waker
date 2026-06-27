@@ -4,6 +4,7 @@
 #include "ds5onswitch/mapper.h"
 #include "ds5onswitch/switch_pro.h"
 #include "ds5onswitch/switch_usb.h"
+#include "ds5onswitch/switch2_wake.h"
 
 #include <array>
 #include <cassert>
@@ -382,6 +383,29 @@ void test_switch_usb_reports()
     assert(!device_info_result.has_switch2_console_addr);
 }
 
+void test_switch2_wake_adv_builder()
+{
+    const uint8_t console_addr[] = {0x13, 0x64, 0xff, 0x05, 0x48, 0xc8};
+    const Switch2WakeAdvData adv = switch2_wake_build_adv_data(console_addr);
+
+    const uint8_t expected[] = {
+        0x02, 0x01, 0x06,
+        0x1b, 0xff, 0x53, 0x05,
+        0x01, 0x00, 0x03, 0x7e, 0x05, 0x66, 0x20, 0x00, 0x01, 0x81,
+        0x13, 0x64, 0xff, 0x05, 0x48, 0xc8,
+        0x0f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    };
+    static_assert(sizeof(expected) == kSwitch2WakeAdvDataSize);
+    assert(std::memcmp(adv.data(), expected, sizeof(expected)) == 0);
+
+    assert(switch2_wake_addr_valid(console_addr));
+    const uint8_t all_zero[] = {0, 0, 0, 0, 0, 0};
+    const uint8_t all_ff[] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
+    assert(!switch2_wake_addr_valid(all_zero));
+    assert(!switch2_wake_addr_valid(all_ff));
+    assert(!switch2_wake_addr_valid(nullptr));
+}
+
 } // namespace
 
 int main()
@@ -393,5 +417,6 @@ int main()
     test_dualsense_bt_input_parser();
     test_dualsense_bt_output_report();
     test_switch_usb_reports();
+    test_switch2_wake_adv_builder();
     return 0;
 }
