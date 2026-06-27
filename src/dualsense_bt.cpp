@@ -37,6 +37,7 @@ hci_con_handle_t g_acl_handle = HCI_CON_HANDLE_INVALID;
 uint16_t g_hid_control_cid = 0;
 uint16_t g_hid_interrupt_cid = 0;
 bool g_device_found = false;
+bool g_local_acl_initiated = false;
 uint8_t g_output_sequence = 0;
 DualSenseBtDataCallback g_data_callback = nullptr;
 queue_t g_send_fifo;
@@ -61,6 +62,7 @@ void reset_connection_state()
     g_hid_control_cid = 0;
     g_hid_interrupt_cid = 0;
     g_device_found = false;
+    g_local_acl_initiated = false;
 }
 
 void open_hid_control()
@@ -253,6 +255,7 @@ void hci_packet_handler(uint8_t packet_type, uint16_t channel,
     case HCI_EVENT_INQUIRY_COMPLETE:
         if (g_device_found) {
             std::printf("[BT] Connecting to %s\n", bd_addr_to_str(g_current_addr));
+            g_local_acl_initiated = true;
             hci_send_cmd(&hci_create_connection, g_current_addr,
                          hci_usable_acl_packet_types(), 0, 0, 0, 1);
         } else if (event_type == HCI_EVENT_INQUIRY_COMPLETE) {
@@ -273,6 +276,7 @@ void hci_packet_handler(uint8_t packet_type, uint16_t channel,
                 break;
             }
             bd_addr_copy(g_current_addr, addr);
+            g_local_acl_initiated = false;
             gap_inquiry_stop();
             hci_send_cmd(&hci_accept_connection_request, addr, 0x01);
         }
@@ -337,7 +341,11 @@ void hci_packet_handler(uint8_t packet_type, uint16_t channel,
     case HCI_EVENT_ENCRYPTION_CHANGE:
         if (hci_event_encryption_change_get_status(packet) == ERROR_CODE_SUCCESS &&
             hci_event_encryption_change_get_encryption_enabled(packet) != 0) {
-            open_hid_control();
+            if (g_local_acl_initiated) {
+                open_hid_control();
+            } else {
+                std::printf("[BT] Encrypted incoming ACL, waiting for HID channels\n");
+            }
         }
         break;
 
@@ -393,7 +401,9 @@ void l2cap_packet_handler(uint8_t packet_type, uint16_t channel,
             g_hid_control_cid = local_cid;
             std::printf("[BT] HID control open cid=0x%04x\n", local_cid);
             request_initial_features();
-            open_hid_interrupt();
+            if (g_local_acl_initiated) {
+                open_hid_interrupt();
+            }
         } else if (psm == PSM_HID_INTERRUPT) {
             g_hid_interrupt_cid = local_cid;
             std::printf("[BT] HID interrupt open cid=0x%04x\n", local_cid);
