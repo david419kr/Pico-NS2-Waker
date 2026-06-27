@@ -310,8 +310,13 @@ bool SwitchUsbEmulator::build_usb_response(uint8_t command, SwitchReport &out) c
     out[1] = command;
     out[3] = 0x03u;
     if (command == kSwitchUsbCmdConnStatus) {
-        std::memcpy(&out[4], kSwitchProControllerBdAddr.data(),
-                    kSwitchProControllerBdAddr.size());
+        // Real Switch Pro USB connection-status replies carry the controller
+        // Bluetooth address in HID wire order (little-endian BD_ADDR), while
+        // the device-info subcommand carries it in display/public order.
+        for (std::size_t i = 0; i < kSwitchProControllerBdAddr.size(); ++i) {
+            out[4u + i] =
+                kSwitchProControllerBdAddr[kSwitchProControllerBdAddr.size() - 1u - i];
+        }
     }
     return true;
 }

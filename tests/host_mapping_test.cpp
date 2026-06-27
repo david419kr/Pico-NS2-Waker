@@ -289,9 +289,12 @@ void test_switch_usb_reports()
     assert(usb.build_usb_response(kSwitchUsbCmdConnStatus, report));
     assert(report[0] == 0x81);
     assert(report[1] == 0x01);
-    assert(report[4] == 0x2c);
-    assert(report[5] == 0xcf);
-    assert(report[6] == 0x67);
+    assert(report[4] == 0x93);
+    assert(report[5] == 0x93);
+    assert(report[6] == 0xdf);
+    assert(report[7] == 0x67);
+    assert(report[8] == 0xcf);
+    assert(report[9] == 0x2c);
 
     assert(usb.build_subcommand_reply(kSwitchSubcmdRequestDeviceInfo,
                                       nullptr, 0, report));
@@ -306,6 +309,20 @@ void test_switch_usb_reports()
     assert(report[21] == 0x67);
     assert(report[25] == 0x01);
     assert(report[26] == 0x01);
+
+    const uint8_t pairing_request_addr[] = {0x01};
+    assert(usb.build_subcommand_reply(kSwitchSubcmdBtManualPairing,
+                                      pairing_request_addr,
+                                      sizeof(pairing_request_addr), report));
+    assert(report[13] == 0x81);
+    assert(report[14] == 0x01);
+    assert(report[15] == 0x01);
+    assert(report[16] == 0x93);
+    assert(report[17] == 0x93);
+    assert(report[18] == 0xdf);
+    assert(report[19] == 0x67);
+    assert(report[20] == 0xcf);
+    assert(report[21] == 0x2c);
 
     uint8_t spi_args[5] = {0x20, 0x60, 0x00, 0x00, 0x18};
     assert(usb.build_subcommand_reply(kSwitchSubcmdSpiRead, spi_args,
