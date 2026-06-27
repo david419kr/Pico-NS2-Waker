@@ -82,6 +82,7 @@ target_link_libraries(ds5onswitch PRIVATE
     ds5onswitch_core
     pico_stdlib
     pico_cyw43_arch_poll
+    pico_btstack_ble
     pico_btstack_classic
     pico_btstack_cyw43
     tinyusb_device

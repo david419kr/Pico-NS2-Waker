@@ -46,6 +46,7 @@ bd_addr_t g_blacklisted_addrs[NVM_NUM_LINK_KEYS]{};
 int g_blacklisted_addr_count = 0;
 bool g_blacklist_dirty = false;
 uint32_t g_blacklist_dirty_ms = 0;
+bool g_paused_for_switch2_wake = false;
 
 void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type,
                                              uint16_t channel,
@@ -116,6 +117,10 @@ void send_initial_output()
 
 void maybe_start_inquiry()
 {
+    if (g_paused_for_switch2_wake) {
+        return;
+    }
+
     gap_connectable_control(1);
     gap_discoverable_control(1);
     gap_inquiry_start(30);
@@ -257,6 +262,10 @@ void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type,
 
     case GAP_EVENT_INQUIRY_COMPLETE:
     case HCI_EVENT_INQUIRY_COMPLETE:
+        if (g_paused_for_switch2_wake) {
+            g_device_found = false;
+            break;
+        }
         if (g_device_found) {
             std::printf("[BT] Connecting to %s\n", bd_addr_to_str(g_current_addr));
             g_local_acl_initiated = true;
@@ -272,6 +281,10 @@ void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type,
         hci_event_connection_request_get_bd_addr(packet, addr);
         const uint32_t cod =
             hci_event_connection_request_get_class_of_device(packet);
+        if (g_paused_for_switch2_wake) {
+            hci_send_cmd(&hci_reject_connection_request, addr, 0x0f);
+            break;
+        }
         if (is_gamepad_class(cod)) {
             if (blacklist_contains(addr)) {
                 std::printf("[BT] Rejecting blacklisted controller %s\n",
@@ -546,6 +559,27 @@ bool dualsense_bt_disconnect()
         return false;
     }
     return true;
+}
+
+void dualsense_bt_pause_for_switch2_wake()
+{
+    g_paused_for_switch2_wake = true;
+    g_device_found = false;
+    gap_inquiry_stop();
+    gap_connectable_control(false);
+    gap_discoverable_control(false);
+    (void)dualsense_bt_disconnect();
+}
+
+void dualsense_bt_resume_after_switch2_wake()
+{
+    g_paused_for_switch2_wake = false;
+    maybe_start_inquiry();
+}
+
+bool __not_in_flash_func(dualsense_bt_is_radio_idle)()
+{
+    return g_acl_handle == HCI_CON_HANDLE_INVALID;
 }
 
 void dualsense_bt_bootsel_click_action()
