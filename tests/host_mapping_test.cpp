@@ -68,7 +68,7 @@ void test_axis_and_motion_mapping()
     in.left_x = 0;
     in.left_y = 255;
     in.right_x = 128;
-    in.right_y = 128;
+    in.right_y = 0;
     in.has_imu = true;
     in.accel_x = 8192;
     in.accel_y = -4096;
@@ -79,7 +79,9 @@ void test_axis_and_motion_mapping()
 
     const SwitchProState state = map_dualsense_to_switch(in);
     assert(state.left_x == 0);
-    assert(state.left_y == 0x0fff);
+    assert(state.left_y == 0);
+    assert(state.right_x == axis8_to_switch12(128));
+    assert(state.right_y == 0x0fff);
     assert(state.has_imu);
     assert(state.accel_x == dualsense_accel_to_switch(in.accel_y));
     assert(state.accel_y == dualsense_accel_to_switch(-in.accel_x));

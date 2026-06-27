@@ -11,6 +11,7 @@ constexpr int32_t kSwitchAccelCountsPerG = 4096;
 constexpr int32_t kDualSenseAccelCountsPerG = 8192;
 constexpr int32_t kSwitchGyroMilliCountsPerDps = 14247;
 constexpr int32_t kDualSenseGyroCountsPerDps = 1024;
+constexpr uint32_t kSwitchStickAxisMax = 0x0fffu;
 
 constexpr int16_t clamp_i16(int32_t value)
 {
@@ -60,7 +61,8 @@ void add_dpad(uint32_t &buttons, DualSenseDpad dpad)
 
 uint16_t axis8_to_switch12(uint8_t value)
 {
-    return static_cast<uint16_t>((static_cast<uint32_t>(value) * 0x0fffu + 127u) / 255u);
+    return static_cast<uint16_t>(
+        (static_cast<uint32_t>(value) * kSwitchStickAxisMax + 127u) / 255u);
 }
 
 int16_t dualsense_accel_to_switch(int16_t value)
@@ -85,9 +87,11 @@ SwitchProState map_dualsense_to_switch(const DualSenseInput &input,
     SwitchProState out{};
 
     out.left_x = axis8_to_switch12(input.left_x);
-    out.left_y = axis8_to_switch12(input.left_y);
+    out.left_y = static_cast<uint16_t>(
+        kSwitchStickAxisMax - axis8_to_switch12(input.left_y));
     out.right_x = axis8_to_switch12(input.right_x);
-    out.right_y = axis8_to_switch12(input.right_y);
+    out.right_y = static_cast<uint16_t>(
+        kSwitchStickAxisMax - axis8_to_switch12(input.right_y));
 
     if (pressed(input.buttons, kDs5Cross)) {
         out.buttons |= kNsB;
