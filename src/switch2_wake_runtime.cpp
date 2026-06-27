@@ -18,7 +18,7 @@ namespace {
 
 constexpr uint32_t kSwitch2WakeTlvTag = 0x5332574bu; // ASCII 'S2WK'
 constexpr uint32_t kPauseTimeoutMs = 2000;
-constexpr uint32_t kAdvertiseDurationMs = 5000;
+constexpr uint32_t kAdvertiseDurationMs = 20000;
 constexpr uint32_t kCooldownMs = 30000;
 
 enum class WakeState : uint8_t {
