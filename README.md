@@ -1,36 +1,79 @@
+[한국어 README](README.ko.md)
+
 # DualSense on Switch
 
-Raspberry Pi Pico 2 W firmware for using a Sony DualSense as a Nintendo Switch 1 Pro Controller.
+Firmware for using a DualSense as a Nintendo Switch Pro Controller with a Raspberry Pi Pico 2 W.
 
-Current status on `main`: the repository contains a buildable Pico 2 W firmware with testable core mapping logic, a TinyUSB Nintendo Switch Pro Controller USB persona that is exposed only while a DualSense is connected, a first DualSense Bluetooth Classic HID bridge, and an experimental pure USB Audio path for the DualSense headset jack/microphone. The local build and host-side protocol tests pass, but real Nintendo Switch and real DualSense hardware validation is still pending.
+Credit: This project is not a fork of [awalol/DS5Dongle](https://github.com/awalol/DS5Dongle), but it is heavily inspired by it and references its implementation extensively.
 
-Implemented runtime pieces:
+## What It Does
 
-1. DualSense Bluetooth HID inquiry/pairing/L2CAP transport, based on `DS5Dongle`.
-2. DualSense BT `0x31` input parsing into Switch Pro `0x30` reports.
-3. TinyUSB HID device descriptor and report descriptor for Nintendo Switch Pro Controller USB VID/PID `057e:2009`.
-4. Switch USB command/subcommand handling for handshake, device info, SPI calibration reads, IMU/vibration enable, player lights, and rumble packets.
-5. Switch `0x01/0x10` HD rumble translation into conservative DualSense BT `0x31` rumble-emulation output.
-6. Automatic USB Audio persona switching:
-   - no DualSense: USB device hidden, no Switch Pro Controller exposed.
-   - DualSense connected, no headset: HID + USB microphone.
-   - DualSense headset jack active: HID + USB stereo output + USB microphone.
-7. DualSense headset audio output: USB 48 kHz stereo PCM OUT is resampled from 512 stereo frames to 480 frames, encoded to 200-byte Opus with the float Opus API, and sent over Bluetooth in DualSense `0x36` headset reports.
-8. DualSense microphone input: Bluetooth `0x31` mic Opus frames are decoded and exposed through the USB Audio IN endpoint, with a reduced default DualSense mic volume.
-9. BOOTSEL button gestures:
-   - single click toggles normal onboard LED output: connected-wait blinking and connected solid LED only. Special LED confirmations still run.
-   - double click disconnects the current controller if connected, or starts a 30-second pairing scan if disconnected.
-   - triple click reboots the Pico into the firmware.
-   - quadruple click reboots into USB BOOTSEL mass-storage mode.
-   - long press forgets all paired controllers, persists a reconnect blacklist, and flashes the LED six times.
+- Connects to a DualSense over Bluetooth and appears to the Switch/PC as a `Pro Controller`.
+- Maps the DualSense touchpad click to the Switch Capture button.
+- Supports motion controls and rumble.
+- Uses the DualSense 3.5 mm jack as a USB audio output when earphones or a headset are plugged in.
+- Exposes the DualSense microphone as a USB microphone.
 
-Not implemented on `main`:
+## Tested Behavior
 
-- Auto Audio Haptics.
-- Runtime haptics mode switching.
-- User configuration UI.
+- PC: 3.5 mm jack audio output and microphone both work.
+- Nintendo Switch 1: 3.5 mm jack audio output works.
+- Nintendo Switch 2: 3.5 mm jack audio output and microphone both work.
 
-## Build
+## Requirements
+
+- Raspberry Pi Pico 2 W
+- Sony DualSense controller
+- USB cable for connecting the Pico 2 W to the Switch/PC
+- Built firmware file: `build\pico2_w\ds5onswitch.uf2`
+
+## Installing Firmware
+
+1. Hold the BOOTSEL button on the Pico 2 W while connecting it to your PC over USB.
+2. Copy `ds5onswitch.uf2` to the USB drive that appears on your PC.
+3. After the copy finishes, the Pico 2 W will reboot automatically.
+
+If this firmware is already installed, you can click BOOTSEL 4 times to enter USB drive mode.
+
+## Pairing
+
+1. Connect the Pico 2 W to the Switch or PC.
+2. When the Pico 2 W LED is blinking, it is waiting for a controller.
+3. Hold PS + Create on the DualSense to enter pairing mode.
+4. Once connected, the Pico 2 W LED stays on and the Switch/PC shows a `Pro Controller`.
+
+After the first pairing, the same DualSense will reconnect when powered on.
+
+## Audio
+
+- Plug earphones or a headset into the DualSense to use it as a Switch/PC audio output device.
+- Unplugging the earphones/headset removes the audio output device, while controller and microphone functions keep working.
+- The DualSense microphone is exposed as a USB microphone while the controller is connected.
+- Pressing the DualSense microphone mute button mutes the microphone and turns on the DualSense mute LED.
+
+The USB connection may briefly reconnect when the audio device changes. This is normal.
+
+## BOOTSEL Button
+
+The Pico 2 W BOOTSEL button can be used for these actions.
+
+| Action | Behavior |
+| --- | --- |
+| 1 click | Toggle normal LED display on/off |
+| 2 clicks | Disconnect the current controller, or start a 30-second pairing scan if no controller is connected |
+| 3 clicks | Reboot the firmware |
+| 4 clicks | Reboot into USB drive mode |
+| Long press | Delete saved controller pairings |
+
+Special LED indications, such as the 6 flashes after a long press, still work even when normal LED display is off.
+
+## LED Status
+
+- Blinking: waiting for a controller
+- On: DualSense connected
+- 6 flashes: saved pairings deleted
+
+## Building
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\setup-pico-windows.ps1
@@ -38,28 +81,15 @@ powershell -ExecutionPolicy Bypass -File tools\test-host.ps1
 powershell -ExecutionPolicy Bypass -File tools\build.ps1
 ```
 
-The firmware output is:
+After building, the firmware file is created here:
 
 ```text
 build\pico2_w\ds5onswitch.uf2
 ```
 
-Verified locally on 2026-06-27:
+## Troubleshooting
 
-- Host mapping tests pass via `tools\test-host.ps1`.
-- Pico 2 W firmware builds via `tools\build.ps1`.
-- Produced UF2: `build\pico2_w\ds5onswitch.uf2`.
-
-The current UF2 exposes USB VID/PID `057e:2009` with product string `Pro Controller` only after a DualSense is connected over Bluetooth. It handles the initial USB command/subcommand surface needed for Switch Pro negotiation, including USB response `0x81`, subcommand reply `0x21`, SPI read calibration payloads, IMU/vibration enable state, player-light state, and `0x01/0x10` rumble packet decoding. When a DualSense is connected over Bluetooth, its BT `0x31` reports replace the neutral input state.
-
-USB Audio interfaces are exposed only after DualSense status makes them useful. Because USB interfaces cannot be added to an already-enumerated configuration, the firmware automatically performs a soft USB disconnect/reconnect when the DualSense connects, or when the headset jack state changes. No BOOTSEL mode switch is required. Switch hardware behavior for the composite HID+Audio personas is still unvalidated.
-
-The BOOTSEL button is polled in firmware. Single click toggles only the normal onboard LED behavior; long-press confirmation flashes still override that setting. Double click keeps pairings intact: if a controller is connected it is disconnected so another paired controller can take over, and if nothing is connected a 30-second scan starts for a controller in PS + Create/Share pairing mode. The runtime relocates selected BT/CYW43/TinyUSB hot paths into RAM so BOOTSEL QSPI CSn sampling can coexist with active Bluetooth traffic.
-
-## Performance
-
-The hot audio and packet path runs from RAM where it matches DS5Dongle's model: libopus text/rodata, DualSense speaker/mic processing, DualSense output report CRC/state helpers, BTstack HCI/L2CAP handlers and TX pumps, CYW43 Bluetooth/SPI transport, TinyUSB HID/audio transfer paths, Pico queues, and common memory operations are relocated to `.time_critical` RAM sections. This is required for stable 3.5 mm headset output, USB microphone forwarding, and connected-state BOOTSEL polling without flash-fetch stalls.
-
-## Design Notes
-
-Detailed local-code and public-reference analysis is in [docs/analysis.md](docs/analysis.md).
+- If the controller does not appear on the Switch/PC, make sure the DualSense is connected to the Pico 2 W. The controller device is not exposed until a DualSense is connected.
+- To connect a different DualSense, click BOOTSEL 2 times to disconnect the current controller, then pair the new controller.
+- If automatic reconnection gets stuck, long-press BOOTSEL to delete saved pairings, then pair again.
+- If audio output does not appear, make sure earphones or a headset are plugged into the DualSense 3.5 mm jack.

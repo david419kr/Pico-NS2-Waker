@@ -9,3 +9,5 @@ build/
 *.o
 *.obj
 *.exe
+.codebase-memory/
+AGENTS.md
