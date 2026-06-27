@@ -1,5 +1,6 @@
 #include "ds5onswitch/switch_usb.h"
 
+#include "ds5onswitch/switch_identity.h"
 #include "ds5onswitch/switch_pro.h"
 
 #include <algorithm>
@@ -9,7 +10,6 @@ namespace ds5onswitch {
 
 namespace {
 
-constexpr uint8_t kSwitchProMac[6] = {0x00, 0x1b, 0x7a, 0x01, 0x02, 0x03};
 constexpr uint8_t kNintendoSwitchName[] = {
     'N', 'i', 'n', 't', 'e', 'n', 'd', 'o', ' ',
     'S', 'w', 'i', 't', 'c', 'h',
@@ -213,8 +213,9 @@ std::size_t manual_pairing_payload(const uint8_t *args, std::size_t args_size,
         if (out_size < 7) {
             return 0;
         }
-        for (std::size_t i = 0; i < sizeof(kSwitchProMac); ++i) {
-            out[1u + i] = kSwitchProMac[sizeof(kSwitchProMac) - 1u - i];
+        for (std::size_t i = 0; i < kSwitchProControllerBdAddr.size(); ++i) {
+            out[1u + i] =
+                kSwitchProControllerBdAddr[kSwitchProControllerBdAddr.size() - 1u - i];
         }
         return 7;
     case 0x02:
@@ -309,7 +310,8 @@ bool SwitchUsbEmulator::build_usb_response(uint8_t command, SwitchReport &out) c
     out[1] = command;
     out[3] = 0x03u;
     if (command == kSwitchUsbCmdConnStatus) {
-        std::memcpy(&out[4], kSwitchProMac, sizeof(kSwitchProMac));
+        std::memcpy(&out[4], kSwitchProControllerBdAddr.data(),
+                    kSwitchProControllerBdAddr.size());
     }
     return true;
 }
@@ -328,12 +330,13 @@ bool SwitchUsbEmulator::build_subcommand_reply(uint8_t subcommand,
         break;
     case kSwitchSubcmdRequestDeviceInfo:
     {
-        static const uint8_t device_info[] = {
-            0x03, 0x48, 0x03, 0x02, 0x00, 0x1b, 0x7a, 0x01, 0x02, 0x03,
-            0x01, 0x01,
-        };
-        std::memcpy(payload, device_info, sizeof(device_info));
-        payload_len = sizeof(device_info);
+        static const uint8_t prefix[] = {0x03, 0x48, 0x03, 0x02};
+        std::memcpy(payload, prefix, sizeof(prefix));
+        std::memcpy(payload + sizeof(prefix), kSwitchProControllerBdAddr.data(),
+                    kSwitchProControllerBdAddr.size());
+        payload[10] = 0x01;
+        payload[11] = 0x01;
+        payload_len = 12;
         break;
     }
     case kSwitchSubcmdSpiRead:
