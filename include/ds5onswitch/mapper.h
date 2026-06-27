@@ -7,9 +7,8 @@ namespace ds5onswitch {
 struct MapperConfig {
     uint8_t trigger_button_threshold = 32;
 
-    // The nRF5340 Switch Pro implementation maps source motion as:
-    // accel=(Y,-X,Z), gyro=(Y,-X,Z). Keep this default until hardware
-    // traces prove a DualSense-specific correction is needed.
+    // nRF5340 Steam-source parity through its DualSense and Switch Pro paths:
+    // accel=(-Z,-X,Y), gyro=(-Y,-X,Z) for parsed DualSense raw fields.
     bool use_nrf5340_switch_motion_axes = true;
 };
 

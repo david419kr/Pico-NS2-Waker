@@ -137,10 +137,10 @@ SwitchProState map_dualsense_to_switch(const DualSenseInput &input,
     if (input.has_imu) {
         out.has_imu = true;
         if (config.use_nrf5340_switch_motion_axes) {
-            out.accel_x = dualsense_accel_to_switch(input.accel_y);
+            out.accel_x = dualsense_accel_to_switch(clamp_i16(-input.accel_z));
             out.accel_y = dualsense_accel_to_switch(clamp_i16(-input.accel_x));
-            out.accel_z = dualsense_accel_to_switch(input.accel_z);
-            out.gyro_x = dualsense_gyro_to_switch(input.gyro_y);
+            out.accel_z = dualsense_accel_to_switch(input.accel_y);
+            out.gyro_x = dualsense_gyro_to_switch(clamp_i16(-input.gyro_y));
             out.gyro_y = dualsense_gyro_to_switch(clamp_i16(-input.gyro_x));
             out.gyro_z = dualsense_gyro_to_switch(input.gyro_z);
         } else {

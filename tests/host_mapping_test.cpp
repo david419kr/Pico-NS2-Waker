@@ -86,10 +86,10 @@ void test_axis_and_motion_mapping()
     assert(state.right_x == axis8_to_switch12(128));
     assert(state.right_y == 0x0fff);
     assert(state.has_imu);
-    assert(state.accel_x == dualsense_accel_to_switch(in.accel_y));
+    assert(state.accel_x == dualsense_accel_to_switch(-in.accel_z));
     assert(state.accel_y == dualsense_accel_to_switch(-in.accel_x));
-    assert(state.accel_z == dualsense_accel_to_switch(in.accel_z));
-    assert(state.gyro_x == dualsense_gyro_to_switch(in.gyro_y));
+    assert(state.accel_z == dualsense_accel_to_switch(in.accel_y));
+    assert(state.gyro_x == dualsense_gyro_to_switch(-in.gyro_y));
     assert(state.gyro_y == dualsense_gyro_to_switch(-in.gyro_x));
     assert(state.gyro_z == dualsense_gyro_to_switch(in.gyro_z));
 
@@ -101,6 +101,36 @@ void test_axis_and_motion_mapping()
     assert(read_i16_le(&report[21]) == state.gyro_y);
     assert(read_i16_le(&report[23]) == state.gyro_z);
     assert(report[12] == 0x30);
+}
+
+void test_nrf5340_steam_motion_axis_parity()
+{
+    constexpr int16_t steam_gyro_x = 0x1234;
+    constexpr int16_t steam_gyro_y = -0x0201;
+    constexpr int16_t steam_gyro_z = 0x3456;
+    constexpr int16_t steam_accel_x = -0x0102;
+    constexpr int16_t steam_accel_y = 0x0203;
+    constexpr int16_t steam_accel_z = -0x3040;
+
+    DualSenseInput in{};
+    in.has_imu = true;
+    in.gyro_x = steam_gyro_x;
+    in.gyro_y = static_cast<int16_t>(-steam_gyro_y);
+    in.gyro_z = steam_gyro_z;
+    in.accel_x = steam_accel_x;
+    in.accel_y = steam_accel_z;
+    in.accel_z = static_cast<int16_t>(-steam_accel_y);
+
+    const SwitchProState state = map_dualsense_to_switch(in);
+    assert(state.gyro_x == steam_gyro_y);
+    assert(state.gyro_y == static_cast<int16_t>(-steam_gyro_x));
+    assert(state.gyro_z == steam_gyro_z);
+
+    // nRF5340 Switch Pro scales Steam accel separately. This checks the
+    // source axis/sign selection before DualSense-to-Switch scaling.
+    assert(state.accel_x == dualsense_accel_to_switch(steam_accel_y));
+    assert(state.accel_y == dualsense_accel_to_switch(-steam_accel_x));
+    assert(state.accel_z == dualsense_accel_to_switch(steam_accel_z));
 }
 
 void test_haptics()
@@ -300,6 +330,7 @@ int main()
 {
     test_button_mapping();
     test_axis_and_motion_mapping();
+    test_nrf5340_steam_motion_axis_parity();
     test_haptics();
     test_dualsense_bt_input_parser();
     test_dualsense_bt_output_report();
