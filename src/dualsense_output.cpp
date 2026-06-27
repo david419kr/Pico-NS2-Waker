@@ -1,5 +1,11 @@
 #include "ds5onswitch/dualsense_output.h"
 
+#if __has_include("pico.h")
+#include "pico.h"
+#else
+#define __not_in_flash_func(name) name
+#endif
+
 #include <algorithm>
 
 namespace ds5onswitch {
@@ -39,14 +45,14 @@ constexpr auto make_crc32_table()
 
 constexpr auto kCrc32Lookup = make_crc32_table();
 
-uint8_t mix_motor(uint8_t body, uint8_t pulse)
+uint8_t __not_in_flash_func(mix_motor)(uint8_t body, uint8_t pulse)
 {
     const uint16_t boosted_pulse = static_cast<uint16_t>(pulse) * 3u / 4u;
     return static_cast<uint8_t>(
         std::min<uint16_t>(255u, std::max<uint16_t>(body, boosted_pulse)));
 }
 
-void set_bit(uint8_t &value, uint8_t bit, bool enabled)
+void __not_in_flash_func(set_bit)(uint8_t &value, uint8_t bit, bool enabled)
 {
     const uint8_t mask = static_cast<uint8_t>(1u << bit);
     if (enabled) {
@@ -58,12 +64,13 @@ void set_bit(uint8_t &value, uint8_t bit, bool enabled)
 
 } // namespace
 
-void DualSenseOutputState::reset()
+void __not_in_flash_func(DualSenseOutputState::reset)()
 {
     state_ = kInitialState;
 }
 
-void DualSenseOutputState::apply_haptics(const DualSenseHapticCommand &command)
+void __not_in_flash_func(DualSenseOutputState::apply_haptics)(
+    const DualSenseHapticCommand &command)
 {
     state_[kRumbleLeftOffset] = mix_motor(command.left_motor, command.left_pulse);
     state_[kRumbleRightOffset] = mix_motor(command.right_motor, command.right_pulse);
@@ -74,7 +81,7 @@ void DualSenseOutputState::apply_haptics(const DualSenseHapticCommand &command)
     set_bit(state_[kFlags38Offset], 2, true);
 }
 
-void DualSenseOutputState::clear_motors()
+void __not_in_flash_func(DualSenseOutputState::clear_motors)()
 {
     state_[kRumbleLeftOffset] = 0;
     state_[kRumbleRightOffset] = 0;
@@ -83,12 +90,13 @@ void DualSenseOutputState::clear_motors()
     set_bit(state_[kFlags38Offset], 2, true);
 }
 
-bool DualSenseOutputState::motors_active() const
+bool __not_in_flash_func(DualSenseOutputState::motors_active)() const
 {
     return state_[kRumbleLeftOffset] != 0 || state_[kRumbleRightOffset] != 0;
 }
 
-void DualSenseOutputState::copy_state_block(uint8_t *out, std::size_t size) const
+void __not_in_flash_func(DualSenseOutputState::copy_state_block)(
+    uint8_t *out, std::size_t size) const
 {
     if (out == nullptr) {
         return;
@@ -99,7 +107,8 @@ void DualSenseOutputState::copy_state_block(uint8_t *out, std::size_t size) cons
     std::copy(state_.begin(), state_.begin() + copy_size, out);
 }
 
-DualSenseBtOutputReport DualSenseOutputState::build_report(uint8_t sequence) const
+DualSenseBtOutputReport __not_in_flash_func(DualSenseOutputState::build_report)(
+    uint8_t sequence) const
 {
     DualSenseBtOutputReport report{};
     report[0] = 0x31;
@@ -110,7 +119,8 @@ DualSenseBtOutputReport DualSenseOutputState::build_report(uint8_t sequence) con
     return report;
 }
 
-uint32_t dualsense_output_crc32(const uint8_t *data, std::size_t size)
+uint32_t __not_in_flash_func(dualsense_output_crc32)(const uint8_t *data,
+                                                     std::size_t size)
 {
     constexpr uint32_t kSeedA2 = 0xeada2d49u;
     uint32_t crc = ~kSeedA2;
@@ -122,12 +132,14 @@ uint32_t dualsense_output_crc32(const uint8_t *data, std::size_t size)
     return ~crc;
 }
 
-void fill_dualsense_output_crc(DualSenseBtOutputReport &report)
+void __not_in_flash_func(fill_dualsense_output_crc)(
+    DualSenseBtOutputReport &report)
 {
     fill_dualsense_output_crc(report.data(), report.size());
 }
 
-void fill_dualsense_output_crc(uint8_t *report, std::size_t size)
+void __not_in_flash_func(fill_dualsense_output_crc)(uint8_t *report,
+                                                    std::size_t size)
 {
     if (report == nullptr || size < 4u) {
         return;

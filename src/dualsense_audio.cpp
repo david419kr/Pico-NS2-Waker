@@ -4,6 +4,7 @@
 
 #include "bsp/board_api.h"
 #include "opus.h"
+#include "pico.h"
 #include "tusb.h"
 
 #include <algorithm>
@@ -53,19 +54,19 @@ OpusDecoder *g_decoder = nullptr;
 uint8_t g_mute[2] = {0, 0};
 int16_t g_volume[2] = {0, 0};
 
-bool mic_enabled()
+bool __not_in_flash_func(mic_enabled)()
 {
     return g_connected && g_mic_streaming;
 }
 
-void clear_mic_queue()
+void __not_in_flash_func(clear_mic_queue)()
 {
     g_mic_head = 0;
     g_mic_tail = 0;
     g_mic_count = 0;
 }
 
-bool pop_mic_packet(MicPacket &packet)
+bool __not_in_flash_func(pop_mic_packet)(MicPacket &packet)
 {
     if (g_mic_count == 0) {
         return false;
@@ -77,7 +78,7 @@ bool pop_mic_packet(MicPacket &packet)
     return true;
 }
 
-void push_mic_packet(const uint8_t *data)
+void __not_in_flash_func(push_mic_packet)(const uint8_t *data)
 {
     if (g_mic_count == kMicQueueDepth) {
         g_mic_tail = static_cast<uint8_t>((g_mic_tail + 1u) % kMicQueueDepth);
@@ -89,7 +90,7 @@ void push_mic_packet(const uint8_t *data)
     ++g_mic_count;
 }
 
-void drain_speaker_audio()
+void __not_in_flash_func(drain_speaker_audio)()
 {
     uint8_t raw[256];
     while (tud_audio_available() != 0) {
@@ -100,7 +101,7 @@ void drain_speaker_audio()
     g_pcm_frames = 0;
 }
 
-bool encode_opus_frame(uint8_t *out)
+bool __not_in_flash_func(encode_opus_frame)(uint8_t *out)
 {
     if (g_encoder == nullptr || out == nullptr) {
         return false;
@@ -113,7 +114,7 @@ bool encode_opus_frame(uint8_t *out)
     return encoded > 0;
 }
 
-bool send_audio_status_report()
+bool __not_in_flash_func(send_audio_status_report)()
 {
     if (!dualsense_bt_is_connected()) {
         return false;
@@ -133,8 +134,8 @@ bool send_audio_status_report()
     return dualsense_bt_send_raw_output_report(report.data(), report.size());
 }
 
-bool send_speaker_report(const DualSenseOutputState &state,
-                         uint8_t &report_sequence)
+bool __not_in_flash_func(send_speaker_report)(const DualSenseOutputState &state,
+                                              uint8_t &report_sequence)
 {
     DualSenseBtAudioReport report{};
     report[0] = kAudioReportId;
@@ -163,9 +164,9 @@ bool send_speaker_report(const DualSenseOutputState &state,
     return dualsense_bt_send_raw_output_report(report.data(), report.size());
 }
 
-void append_speaker_frames(const int16_t *samples, uint16_t frames,
-                           const DualSenseOutputState &state,
-                           uint8_t &report_sequence)
+void __not_in_flash_func(append_speaker_frames)(
+    const int16_t *samples, uint16_t frames, const DualSenseOutputState &state,
+    uint8_t &report_sequence)
 {
     uint16_t src_frame = 0;
     while (src_frame < frames) {
@@ -188,8 +189,8 @@ void append_speaker_frames(const int16_t *samples, uint16_t frames,
     }
 }
 
-void service_speaker(const DualSenseOutputState &state,
-                     uint8_t &report_sequence)
+void __not_in_flash_func(service_speaker)(const DualSenseOutputState &state,
+                                          uint8_t &report_sequence)
 {
     if (!g_speaker_streaming || !g_headphones_connected ||
         usb_descriptors_audio_persona() != UsbAudioPersona::Headset ||
@@ -219,7 +220,7 @@ void service_speaker(const DualSenseOutputState &state,
     append_speaker_frames(raw, frames, state, report_sequence);
 }
 
-void service_mic()
+void __not_in_flash_func(service_mic)()
 {
     if (!mic_enabled() || g_decoder == nullptr) {
         clear_mic_queue();
@@ -387,7 +388,7 @@ void dualsense_audio_init()
     }
 }
 
-void dualsense_audio_set_connected(bool connected)
+void __not_in_flash_func(dualsense_audio_set_connected)(bool connected)
 {
     g_connected = connected;
     if (!connected) {
@@ -402,7 +403,8 @@ void dualsense_audio_set_connected(bool connected)
     }
 }
 
-void dualsense_audio_update_status(const DualSenseInput &input)
+void __not_in_flash_func(dualsense_audio_update_status)(
+    const DualSenseInput &input)
 {
     g_connected = true;
     g_headphones_connected = input.headphones_connected;
@@ -411,7 +413,8 @@ void dualsense_audio_update_status(const DualSenseInput &input)
     g_external_mic_active = input.external_mic_active;
 }
 
-void dualsense_audio_add_mic_frame(const uint8_t *data, std::size_t size)
+void __not_in_flash_func(dualsense_audio_add_mic_frame)(const uint8_t *data,
+                                                        std::size_t size)
 {
     if (!mic_enabled() || data == nullptr || size < kMicOpusBytes) {
         return;
@@ -420,7 +423,7 @@ void dualsense_audio_add_mic_frame(const uint8_t *data, std::size_t size)
     push_mic_packet(data);
 }
 
-UsbAudioPersona dualsense_audio_desired_persona()
+UsbAudioPersona __not_in_flash_func(dualsense_audio_desired_persona)()
 {
     if (!g_connected) {
         return UsbAudioPersona::HidOnly;
@@ -431,12 +434,13 @@ UsbAudioPersona dualsense_audio_desired_persona()
     return UsbAudioPersona::MicOnly;
 }
 
-bool dualsense_audio_speaker_streaming()
+bool __not_in_flash_func(dualsense_audio_speaker_streaming)()
 {
     return g_speaker_streaming && g_headphones_connected;
 }
 
-void dualsense_audio_loop(const DualSenseOutputState &state, uint8_t &sequence)
+void __not_in_flash_func(dualsense_audio_loop)(const DualSenseOutputState &state,
+                                               uint8_t &sequence)
 {
     service_speaker(state, sequence);
     service_mic();

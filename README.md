@@ -18,7 +18,7 @@ Implemented runtime pieces:
 7. DualSense headset audio output: USB 48 kHz stereo PCM is encoded to Opus and sent over Bluetooth in DualSense `0x36` speaker/headset reports.
 8. DualSense microphone input: Bluetooth `0x31` mic Opus frames are decoded and exposed through the USB Audio IN endpoint.
 9. BOOTSEL button gestures:
-   - short press toggles the normal solid LED on/off.
+   - short press disconnects the current controller if connected, or starts a 30-second pairing scan if disconnected.
    - double press reboots the Pico into the firmware.
    - triple press reboots into USB BOOTSEL mass-storage mode.
    - long press forgets all paired controllers, persists a reconnect blacklist, and flashes the LED six times.
@@ -53,7 +53,11 @@ The current UF2 starts as USB VID/PID `057e:2009` with product string `Pro Contr
 
 USB Audio interfaces are exposed only after DualSense status makes them useful. Because USB interfaces cannot be added to an already-enumerated configuration, the firmware automatically performs a soft USB disconnect/reconnect when the DualSense connects, or when the headset jack state changes. No BOOTSEL mode switch is required. Switch hardware behavior for the composite HID+Audio personas is still unvalidated.
 
-The BOOTSEL button is polled in firmware. Short press only toggles the normal connected solid LED state; pairing/disconnected blink and clear-confirmation flashing still run even when the solid LED is toggled off.
+The BOOTSEL button is polled in firmware. Short press keeps pairings intact: if a controller is connected it is disconnected so another paired controller can take over, and if nothing is connected a 30-second scan starts for a controller in PS + Create/Share pairing mode. The runtime relocates selected BT/CYW43/TinyUSB hot paths into RAM so BOOTSEL QSPI CSn sampling can coexist with active Bluetooth traffic.
+
+## Performance
+
+The hot audio and packet path runs from RAM where it matches DS5Dongle's model: libopus text/rodata, DualSense speaker/mic processing, DualSense output report CRC/state helpers, BTstack HCI/L2CAP handlers and TX pumps, CYW43 Bluetooth/SPI transport, TinyUSB HID/audio transfer paths, Pico queues, and common memory operations are relocated to `.time_critical` RAM sections. This is required for stable 3.5 mm headset output, USB microphone forwarding, and connected-state BOOTSEL polling without flash-fetch stalls.
 
 ## Design Notes
 

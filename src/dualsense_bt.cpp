@@ -9,6 +9,7 @@
 #include "hci_cmd.h"
 #include "l2cap.h"
 #include "bsp/board_api.h"
+#include "pico.h"
 #include "pico/util/queue.h"
 
 #include <cstdio>
@@ -46,10 +47,12 @@ int g_blacklisted_addr_count = 0;
 bool g_blacklist_dirty = false;
 uint32_t g_blacklist_dirty_ms = 0;
 
-void hci_packet_handler(uint8_t packet_type, uint16_t channel,
-                        uint8_t *packet, uint16_t size);
-void l2cap_packet_handler(uint8_t packet_type, uint16_t channel,
-                          uint8_t *packet, uint16_t size);
+void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type,
+                                             uint16_t channel,
+                                             uint8_t *packet, uint16_t size);
+void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type,
+                                               uint16_t channel,
+                                               uint8_t *packet, uint16_t size);
 
 bool is_gamepad_class(uint32_t class_of_device)
 {
@@ -208,8 +211,9 @@ void blacklist_remove(const bd_addr_t addr)
     }
 }
 
-void hci_packet_handler(uint8_t packet_type, uint16_t channel,
-                        uint8_t *packet, uint16_t size)
+void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type,
+                                             uint16_t channel,
+                                             uint8_t *packet, uint16_t size)
 {
     (void)packet_type;
     (void)channel;
@@ -367,8 +371,9 @@ void hci_packet_handler(uint8_t packet_type, uint16_t channel,
     }
 }
 
-void l2cap_packet_handler(uint8_t packet_type, uint16_t channel,
-                          uint8_t *packet, uint16_t size)
+void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type,
+                                               uint16_t channel,
+                                               uint8_t *packet, uint16_t size)
 {
     if (packet_type == L2CAP_DATA_PACKET) {
         if (channel == g_hid_interrupt_cid) {
@@ -491,17 +496,19 @@ bool dualsense_bt_init()
     return hci_power_control(HCI_POWER_ON) == 0;
 }
 
-bool dualsense_bt_is_connected()
+bool __not_in_flash_func(dualsense_bt_is_connected)()
 {
     return g_hid_interrupt_cid != 0;
 }
 
-bool dualsense_bt_send_output_report(const DualSenseBtOutputReport &report)
+bool __not_in_flash_func(dualsense_bt_send_output_report)(
+    const DualSenseBtOutputReport &report)
 {
     return dualsense_bt_send_raw_output_report(report.data(), report.size());
 }
 
-bool dualsense_bt_send_raw_output_report(const uint8_t *report, std::size_t size)
+bool __not_in_flash_func(dualsense_bt_send_raw_output_report)(
+    const uint8_t *report, std::size_t size)
 {
     if (g_hid_interrupt_cid == 0) {
         return false;
@@ -532,8 +539,26 @@ bool dualsense_bt_disconnect()
     if (g_acl_handle == HCI_CON_HANDLE_INVALID) {
         return false;
     }
-    hci_send_cmd(&hci_disconnect, g_acl_handle, 0x13);
+
+    const uint8_t status = gap_disconnect(g_acl_handle);
+    if (status != ERROR_CODE_SUCCESS &&
+        status != ERROR_CODE_COMMAND_DISALLOWED) {
+        std::printf("[BT] Disconnect request failed status=0x%02x\n", status);
+        return false;
+    }
     return true;
+}
+
+void dualsense_bt_bootsel_click_action()
+{
+    if (g_acl_handle != HCI_CON_HANDLE_INVALID) {
+        std::printf("[BT] BOOTSEL click - disconnect current ACL\n");
+        (void)dualsense_bt_disconnect();
+    } else {
+        std::printf("[BT] BOOTSEL click - fresh inquiry\n");
+        reset_connection_state();
+        maybe_start_inquiry();
+    }
 }
 
 void dualsense_bt_forget_pairings()

@@ -40,7 +40,7 @@ void push_pending(const SwitchReport &report)
     g_pending_reports[g_pending_count++] = report;
 }
 
-bool pop_pending(SwitchReport &report)
+bool __not_in_flash_func(pop_pending)(SwitchReport &report)
 {
     if (g_pending_count == 0) {
         return false;
@@ -54,13 +54,14 @@ bool pop_pending(SwitchReport &report)
     return true;
 }
 
-void send_report(const SwitchReport &report)
+void __not_in_flash_func(send_report)(const SwitchReport &report)
 {
     (void)tud_hid_report(report[0], report.data() + 1, report.size() - 1);
 }
 
-void on_dualsense_bt_data(DualSenseBtChannel channel, const uint8_t *data,
-                          std::size_t size)
+void __not_in_flash_func(on_dualsense_bt_data)(DualSenseBtChannel channel,
+                                               const uint8_t *data,
+                                               std::size_t size)
 {
     if (channel != DualSenseBtChannel::Interrupt) {
         return;
@@ -89,7 +90,8 @@ void on_dualsense_bt_data(DualSenseBtChannel channel, const uint8_t *data,
     g_switch_usb.set_state(map_dualsense_to_switch(input));
 }
 
-void apply_switch_feedback(const SwitchUsbFeedback &feedback)
+void __not_in_flash_func(apply_switch_feedback)(
+    const SwitchUsbFeedback &feedback)
 {
     if (!feedback.has_rumble) {
         return;
@@ -104,7 +106,7 @@ void apply_switch_feedback(const SwitchUsbFeedback &feedback)
     g_ds_output_dirty = true;
 }
 
-void service_dualsense_connection()
+void __not_in_flash_func(service_dualsense_connection)()
 {
     static bool was_connected = false;
     const bool connected = dualsense_bt_is_connected();
@@ -132,7 +134,7 @@ void service_dualsense_connection()
     }
 }
 
-void service_dualsense_output()
+void __not_in_flash_func(service_dualsense_output)()
 {
     if (!dualsense_bt_is_connected()) {
         return;
@@ -157,7 +159,7 @@ void service_dualsense_output()
     }
 }
 
-void service_usb_reports()
+void __not_in_flash_func(service_usb_reports)()
 {
     static uint32_t last_input_ms = 0;
     if (!tud_mounted() || !tud_hid_ready()) {
@@ -179,7 +181,7 @@ void service_usb_reports()
     send_report(g_switch_usb.build_input_report());
 }
 
-void service_usb_reconnect()
+void __not_in_flash_func(service_usb_reconnect)()
 {
     if (!g_usb_reconnect_pending) {
         return;
@@ -219,8 +221,28 @@ void service_led()
         return;
     }
 
-    led = bootsel_button_solid_led_enabled();
+    led = true;
     cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, led);
+}
+
+void __no_inline_not_in_flash_func(app_loop)()
+{
+    while (true) {
+        bootsel_button_task();
+        if (bootsel_button_interaction_active()) {
+            continue;
+        }
+
+        cyw43_arch_poll();
+        tud_task();
+        service_dualsense_connection();
+        dualsense_audio_loop(g_ds_output, g_ds_output_sequence);
+        service_dualsense_output();
+        service_usb_reports();
+        service_usb_reconnect();
+        dualsense_bt_persist_blacklist_if_dirty();
+        service_led();
+    }
 }
 
 } // namespace
@@ -253,17 +275,8 @@ int main()
         return 1;
     }
 
-    while (true) {
-        cyw43_arch_poll();
-        tud_task();
-        service_dualsense_connection();
-        dualsense_audio_loop(g_ds_output, g_ds_output_sequence);
-        service_dualsense_output();
-        service_usb_reports();
-        service_usb_reconnect();
-        bootsel_button_task();
-        service_led();
-    }
+    app_loop();
+    return 0;
 }
 
 extern "C" uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id,

@@ -20,28 +20,23 @@
 namespace ds5onswitch {
 namespace {
 
-constexpr uint32_t kPollIntervalMs = 100;
-constexpr int kHoldSamples = 15;
-constexpr int kClickWindowSamples = 5;
-constexpr int kClearFlashToggles = 12;
-constexpr uint32_t kClearFlashIntervalMs = 100;
+// Gesture thresholds, sampled frequently enough that a held BOOTSEL button can
+// gate off BT/USB work before QSPI CSn and active Bluetooth traffic collide.
+constexpr uint32_t POLL_INTERVAL_MS = 20;
+constexpr int HOLD_SAMPLES = 1500 / POLL_INTERVAL_MS;
+constexpr int CLICK_WINDOW_SAMPLES = 500 / POLL_INTERVAL_MS;
 
-enum class ButtonState {
-    Idle,
-    Pressing,
-    Held,
-    WaitForNextClick,
-};
+// FSM: 0 idle, 1 pressing (counting for hold), 2 held (fired), 3 wait-for-next-click.
+int button_fsm = 0;
+int button_press_samples = 0;
+int button_wait_samples = 0;
+int button_click_count = 0;
+uint32_t button_last_check_ms = 0;
+bool button_hold_pending = false;
 
-ButtonState g_state = ButtonState::Idle;
-int g_press_samples = 0;
-int g_wait_samples = 0;
-int g_click_count = 0;
-uint32_t g_last_check_ms = 0;
-bool g_solid_led_enabled = true;
-int g_clear_flash_toggles_remaining = 0;
-uint32_t g_clear_flash_last_toggle_ms = 0;
-bool g_clear_flash_led = false;
+int button_clear_flash_toggles_remaining = 0;
+uint32_t button_clear_flash_last_toggle_ms = 0;
+bool button_clear_flash_led = false;
 
 void __no_inline_not_in_flash_func(read_bootsel_cb)(void *param)
 {
@@ -91,19 +86,18 @@ void reboot_to_bootsel()
     reset_usb_boot(0, 0);
 }
 
-void start_clear_flash()
+void button_start_clear_flash()
 {
-    g_clear_flash_toggles_remaining = kClearFlashToggles;
-    g_clear_flash_last_toggle_ms = to_ms_since_boot(get_absolute_time());
-    g_clear_flash_led = false;
+    button_clear_flash_toggles_remaining = 12;
+    button_clear_flash_last_toggle_ms = to_ms_since_boot(get_absolute_time());
+    button_clear_flash_led = false;
 }
 
-void dispatch_clicks(int clicks)
+// Act on a completed click sequence once the inter-click window closes.
+void button_dispatch(int clicks)
 {
     if (clicks <= 1) {
-        g_solid_led_enabled = !g_solid_led_enabled;
-        std::printf("[BTN] BOOTSEL click - solid LED %s\n",
-                    g_solid_led_enabled ? "on" : "off");
+        dualsense_bt_bootsel_click_action(); // single click -> pair / switch controller
     } else if (clicks == 2) {
         reboot_to_app();
     } else {
@@ -113,78 +107,83 @@ void dispatch_clicks(int clicks)
 
 } // namespace
 
-void bootsel_button_task()
+void __not_in_flash_func(bootsel_button_task)()
 {
     const uint32_t now = to_ms_since_boot(get_absolute_time());
-    if (now - g_last_check_ms < kPollIntervalMs) {
+    if (now - button_last_check_ms < POLL_INTERVAL_MS) {
         return;
     }
-    g_last_check_ms = now;
-
-    dualsense_bt_persist_blacklist_if_dirty();
+    button_last_check_ms = now;
 
     const bool pressed = read_bootsel();
-    switch (g_state) {
-    case ButtonState::Idle:
+    switch (button_fsm) {
+    case 0: // IDLE - wait for the first press
         if (pressed) {
-            g_state = ButtonState::Pressing;
-            g_press_samples = 1;
+            button_fsm = 1;
+            button_press_samples = 1;
+            button_hold_pending = false;
         }
         break;
-    case ButtonState::Pressing:
+    case 1: // PRESSING - counting samples for hold
         if (pressed) {
-            if (++g_press_samples >= kHoldSamples) {
-                g_click_count = 0;
-                g_state = ButtonState::Held;
-                dualsense_bt_forget_pairings();
-                start_clear_flash();
+            if (++button_press_samples >= HOLD_SAMPLES) {
+                button_click_count = 0;
+                button_fsm = 2;
+                button_hold_pending = true;
             }
         } else {
-            ++g_click_count;
-            g_state = ButtonState::WaitForNextClick;
-            g_wait_samples = 0;
+            // released before the hold threshold -> count this click and
+            // wait to see whether more clicks follow
+            ++button_click_count;
+            button_fsm = 3;
+            button_wait_samples = 0;
         }
         break;
-    case ButtonState::Held:
+    case 2: // HELD - hold already fired, wait for release
         if (!pressed) {
-            g_state = ButtonState::Idle;
-            g_press_samples = 0;
+            button_fsm = 0;
+            button_press_samples = 0;
+            if (button_hold_pending) {
+                button_hold_pending = false;
+                dualsense_bt_forget_pairings();
+                button_start_clear_flash();
+            }
         }
         break;
-    case ButtonState::WaitForNextClick:
+    case 3: // WAIT - released; watch for the next press inside the window
         if (pressed) {
-            g_state = ButtonState::Pressing;
-            g_press_samples = 1;
-        } else if (++g_wait_samples >= kClickWindowSamples) {
-            const int clicks = g_click_count;
-            g_click_count = 0;
-            g_state = ButtonState::Idle;
-            g_press_samples = 0;
-            dispatch_clicks(clicks);
+            button_fsm = 1;
+            button_press_samples = 1;
+        } else if (++button_wait_samples >= CLICK_WINDOW_SAMPLES) {
+            const int clicks = button_click_count;
+            button_click_count = 0;
+            button_fsm = 0;
+            button_press_samples = 0;
+            button_dispatch(clicks);
         }
         break;
     }
 }
 
-bool bootsel_button_solid_led_enabled()
+bool __not_in_flash_func(bootsel_button_interaction_active)()
 {
-    return g_solid_led_enabled;
+    return button_fsm != 0;
 }
 
 bool bootsel_button_led_override(bool &enabled)
 {
-    if (g_clear_flash_toggles_remaining <= 0) {
+    if (button_clear_flash_toggles_remaining <= 0) {
         return false;
     }
 
     const uint32_t now = to_ms_since_boot(get_absolute_time());
-    if (now - g_clear_flash_last_toggle_ms >= kClearFlashIntervalMs) {
-        g_clear_flash_last_toggle_ms = now;
-        g_clear_flash_led = !g_clear_flash_led;
-        --g_clear_flash_toggles_remaining;
+    if (now - button_clear_flash_last_toggle_ms >= 100) {
+        button_clear_flash_last_toggle_ms = now;
+        button_clear_flash_led = !button_clear_flash_led;
+        --button_clear_flash_toggles_remaining;
     }
 
-    enabled = g_clear_flash_led;
+    enabled = button_clear_flash_led;
     return true;
 }
 
