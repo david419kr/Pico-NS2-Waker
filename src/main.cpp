@@ -119,19 +119,23 @@ void __not_in_flash_func(service_dualsense_connection)()
     g_ds_output.reset();
     g_ds_output_dirty = connected;
 
-    if (dualsense_audio_desired_persona() != g_usb_persona) {
-        g_usb_persona = dualsense_audio_desired_persona();
+    if (!connected) {
+        g_usb_reconnect_pending = false;
+        g_usb_persona = UsbAudioPersona::HidOnly;
         usb_descriptors_set_audio_persona(g_usb_persona);
         tud_disconnect();
-        g_usb_reconnect_pending = true;
-        g_usb_reconnect_at_ms = board_millis() + 250u;
-    }
 
-    if (!connected) {
         DualSenseInput neutral{};
         neutral.has_imu = true;
         g_switch_usb.set_state(map_dualsense_to_switch(neutral));
+        return;
     }
+
+    g_usb_persona = dualsense_audio_desired_persona();
+    usb_descriptors_set_audio_persona(g_usb_persona);
+    tud_disconnect();
+    g_usb_reconnect_pending = true;
+    g_usb_reconnect_at_ms = board_millis() + 250u;
 }
 
 void __not_in_flash_func(service_dualsense_output)()
@@ -184,6 +188,11 @@ void __not_in_flash_func(service_usb_reports)()
 void __not_in_flash_func(service_usb_reconnect)()
 {
     if (!g_usb_reconnect_pending) {
+        return;
+    }
+
+    if (!dualsense_bt_is_connected()) {
+        g_usb_reconnect_pending = false;
         return;
     }
 
@@ -255,6 +264,7 @@ int main()
         .speed = TUSB_SPEED_FULL,
     };
     tusb_init(BOARD_TUD_RHPORT, &dev_init);
+    tud_disconnect();
     board_init_after_tusb();
 
     if (cyw43_arch_init() != 0) {
