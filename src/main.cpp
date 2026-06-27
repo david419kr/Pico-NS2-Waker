@@ -4,13 +4,11 @@
 #include "ds5onswitch/dualsense_bt.h"
 #include "ds5onswitch/dualsense_output.h"
 #include "ds5onswitch/dualsense_report.h"
-#include "ds5onswitch/switch_identity.h"
 #include "ds5onswitch/switch_usb.h"
 #include "ds5onswitch/switch2_wake_runtime.h"
 #include "ds5onswitch/usb_descriptors.h"
 
 #include "bsp/board_api.h"
-#include "cyw43.h"
 #include "pico/cyw43_arch.h"
 #include "pico/stdlib.h"
 #include "tusb.h"
@@ -45,16 +43,6 @@ uint32_t g_ds_connected_since_ms = 0;
 
 constexpr uint32_t kUsbUnmountDebounceMs = 1000;
 constexpr uint32_t kHomeWakePendingWindowMs = 3000;
-
-void configure_bt_controller_identity()
-{
-    static_assert(kSwitchProControllerBdAddr[5] != 0x00,
-                  "CYW43 transport increments mac[5] for BT address");
-
-    std::memcpy(cyw43_state.mac, kSwitchProControllerBdAddr.data(),
-                kSwitchProControllerBdAddr.size());
-    --cyw43_state.mac[5];
-}
 
 void push_pending(const SwitchReport &report)
 {
@@ -385,7 +373,6 @@ int main()
     if (cyw43_arch_init() != 0) {
         return 1;
     }
-    configure_bt_controller_identity();
     cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, false);
 
     g_ds_output.reset();

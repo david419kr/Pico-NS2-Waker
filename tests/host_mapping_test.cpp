@@ -289,9 +289,9 @@ void test_switch_usb_reports()
     assert(usb.build_usb_response(kSwitchUsbCmdConnStatus, report));
     assert(report[0] == 0x81);
     assert(report[1] == 0x01);
-    assert(report[4] == 0x00);
-    assert(report[5] == 0x1b);
-    assert(report[6] == 0x7a);
+    assert(report[4] == 0x2c);
+    assert(report[5] == 0xcf);
+    assert(report[6] == 0x67);
 
     assert(usb.build_subcommand_reply(kSwitchSubcmdRequestDeviceInfo,
                                       nullptr, 0, report));
@@ -301,6 +301,9 @@ void test_switch_usb_reports()
     assert(report[15] == 0x03);
     assert(report[17] == 0x03);
     assert(report[18] == 0x02);
+    assert(report[19] == 0x2c);
+    assert(report[20] == 0xcf);
+    assert(report[21] == 0x67);
     assert(report[25] == 0x01);
     assert(report[26] == 0x01);
 
