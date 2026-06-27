@@ -33,6 +33,7 @@ int button_wait_samples = 0;
 int button_click_count = 0;
 uint32_t button_last_check_ms = 0;
 bool button_hold_pending = false;
+bool button_normal_led_enabled = true;
 
 int button_clear_flash_toggles_remaining = 0;
 uint32_t button_clear_flash_last_toggle_ms = 0;
@@ -72,7 +73,7 @@ bool read_bootsel()
 
 void reboot_to_app()
 {
-    std::printf("[BTN] BOOTSEL double click - reboot\n");
+    std::printf("[BTN] BOOTSEL triple click - reboot\n");
     *reinterpret_cast<volatile uint32_t *>(0xe000ed0c) = 0x05fa0004;
     __dsb();
     while (true) {
@@ -82,8 +83,15 @@ void reboot_to_app()
 
 void reboot_to_bootsel()
 {
-    std::printf("[BTN] BOOTSEL triple click - reboot to BOOTSEL\n");
+    std::printf("[BTN] BOOTSEL quadruple click - reboot to BOOTSEL\n");
     reset_usb_boot(0, 0);
+}
+
+void button_toggle_normal_led()
+{
+    button_normal_led_enabled = !button_normal_led_enabled;
+    std::printf("[BTN] BOOTSEL single click - normal LED %s\n",
+                button_normal_led_enabled ? "enabled" : "disabled");
 }
 
 void button_start_clear_flash()
@@ -97,11 +105,15 @@ void button_start_clear_flash()
 void button_dispatch(int clicks)
 {
     if (clicks <= 1) {
-        dualsense_bt_bootsel_click_action(); // single click -> pair / switch controller
+        button_toggle_normal_led();
     } else if (clicks == 2) {
+        dualsense_bt_bootsel_click_action(); // double click -> pair / switch controller
+    } else if (clicks == 3) {
         reboot_to_app();
-    } else {
+    } else if (clicks == 4) {
         reboot_to_bootsel();
+    } else {
+        std::printf("[BTN] BOOTSEL %d clicks - no action\n", clicks);
     }
 }
 
@@ -168,6 +180,11 @@ void __not_in_flash_func(bootsel_button_task)()
 bool __not_in_flash_func(bootsel_button_interaction_active)()
 {
     return button_fsm != 0;
+}
+
+bool __not_in_flash_func(bootsel_button_normal_led_enabled)()
+{
+    return button_normal_led_enabled;
 }
 
 bool bootsel_button_led_override(bool &enabled)

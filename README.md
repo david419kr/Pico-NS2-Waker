@@ -18,9 +18,10 @@ Implemented runtime pieces:
 7. DualSense headset audio output: USB 48 kHz stereo PCM OUT is resampled from 512 stereo frames to 480 frames, encoded to 200-byte Opus with the float Opus API, and sent over Bluetooth in DualSense `0x36` headset reports.
 8. DualSense microphone input: Bluetooth `0x31` mic Opus frames are decoded and exposed through the USB Audio IN endpoint, with a reduced default DualSense mic volume.
 9. BOOTSEL button gestures:
-   - short press disconnects the current controller if connected, or starts a 30-second pairing scan if disconnected.
-   - double press reboots the Pico into the firmware.
-   - triple press reboots into USB BOOTSEL mass-storage mode.
+   - single click toggles normal onboard LED output: connected-wait blinking and connected solid LED only. Special LED confirmations still run.
+   - double click disconnects the current controller if connected, or starts a 30-second pairing scan if disconnected.
+   - triple click reboots the Pico into the firmware.
+   - quadruple click reboots into USB BOOTSEL mass-storage mode.
    - long press forgets all paired controllers, persists a reconnect blacklist, and flashes the LED six times.
 
 Not implemented on `main`:
@@ -53,7 +54,7 @@ The current UF2 exposes USB VID/PID `057e:2009` with product string `Pro Control
 
 USB Audio interfaces are exposed only after DualSense status makes them useful. Because USB interfaces cannot be added to an already-enumerated configuration, the firmware automatically performs a soft USB disconnect/reconnect when the DualSense connects, or when the headset jack state changes. No BOOTSEL mode switch is required. Switch hardware behavior for the composite HID+Audio personas is still unvalidated.
 
-The BOOTSEL button is polled in firmware. Short press keeps pairings intact: if a controller is connected it is disconnected so another paired controller can take over, and if nothing is connected a 30-second scan starts for a controller in PS + Create/Share pairing mode. The runtime relocates selected BT/CYW43/TinyUSB hot paths into RAM so BOOTSEL QSPI CSn sampling can coexist with active Bluetooth traffic.
+The BOOTSEL button is polled in firmware. Single click toggles only the normal onboard LED behavior; long-press confirmation flashes still override that setting. Double click keeps pairings intact: if a controller is connected it is disconnected so another paired controller can take over, and if nothing is connected a 30-second scan starts for a controller in PS + Create/Share pairing mode. The runtime relocates selected BT/CYW43/TinyUSB hot paths into RAM so BOOTSEL QSPI CSn sampling can coexist with active Bluetooth traffic.
 
 ## Performance
 

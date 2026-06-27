@@ -233,6 +233,12 @@ void service_led()
         return;
     }
 
+    if (!bootsel_button_normal_led_enabled()) {
+        led = false;
+        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, false);
+        return;
+    }
+
     const bool mounted = tud_mounted();
     const bool connected = dualsense_bt_is_connected();
     if (!mounted || !connected) {
