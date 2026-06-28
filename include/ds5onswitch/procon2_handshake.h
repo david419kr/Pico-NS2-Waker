@@ -15,13 +15,16 @@ namespace ds5onswitch {
 // into the console's BLE wake whitelist, enabling a *general-purpose* wake
 // using the Pico's own address instead of a stolen, hardcoded one.
 //
-// IMPORTANT / UNCERTAIN: the captured 0x15 exchange contains a 16-byte
-// challenge/response that is almost certainly key-based (LTK/session-key
-// negotiation). We cannot derive correct responses from the capture alone.
-// Those replies are produced here as best-effort placeholders and are flagged
-// via Procon2Reply::is_crypto_placeholder so callers/tests know the response is
-// not authenticated. This module is therefore handshake *scaffolding*, not a
-// verified working ProCon2 authentication.
+// The 0x15/0x04 + 0x15/0x02 challenge/response follows the public RE from
+// ndeadly/switch2_controller_research:
+//
+//   0x15/0x04: host sends A1, controller replies fixed B1
+//   LTK = A1 XOR B1
+//   0x15/0x02: host sends A2, controller replies
+//               AES-128-ECB(reverse(A2), key=reverse(LTK))
+//
+// The 16-byte A1/A2/B1/B2 values are carried in the packet's reverse byte
+// order. The AES output is placed on the wire as produced by the above formula.
 
 constexpr uint8_t kProcon2ReportMac = 0x03;        // console MAC announce / ack
 constexpr uint8_t kProcon2ReportPairing = 0x15;    // business-card + crypto
@@ -34,6 +37,8 @@ constexpr std::size_t kProcon2ReplyMaxLen = 64;
 
 struct Procon2Reply {
     bool valid = false;
+    // Legacy test/diagnostic flag. This should remain false now that 0x15/0x02
+    // is computed from the exchanged LTK material instead of zero-filled.
     bool is_crypto_placeholder = false;
     std::size_t len = 0;
     std::array<uint8_t, kProcon2ReplyMaxLen> data{};

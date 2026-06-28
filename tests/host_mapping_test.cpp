@@ -501,7 +501,7 @@ void test_procon2_handshake_replies()
     assert(!procon2_build_reply(junk, sizeof(junk), ctrl_addr_wire).valid);
 
     // 0x03 console MAC announce -> ack reply (report id + device direction).
-    const uint8_t mac_req[] = {0x03, 0x91, 0x0d, 0x00, 0x08, 0x00, 0x00,
+    const uint8_t mac_req[] = {0x03, 0x91, 0x00, 0x0d, 0x00, 0x08, 0x00, 0x00,
                                0x01, 0x00, 0x13, 0x64, 0xff, 0x05, 0x48, 0xc8};
     assert(procon2_is_handshake_request(mac_req, sizeof(mac_req)));
     Procon2Reply mac_reply =
@@ -511,26 +511,52 @@ void test_procon2_handshake_replies()
     assert(mac_reply.data[0] == kProcon2ReportMac);
     assert(mac_reply.data[1] == kProcon2DirDeviceReply);
 
-    // 0x15 cmd 0x0001 business-card -> reply embeds controller's own wire addr.
-    const uint8_t card_req[] = {0x15, 0x91, 0x01, 0x00, 0x0e, 0x00, 0x00, 0x02,
-                                0x13, 0x64, 0xff, 0x05, 0x48, 0xc8,
+    // 0x15 subcmd 0x01 business-card -> reply embeds controller's own wire addr.
+    const uint8_t card_req[] = {0x15, 0x91, 0x00, 0x01, 0x00, 0x0e, 0x00, 0x00,
+                                0x00, 0x02, 0x13, 0x64, 0xff, 0x05, 0x48, 0xc8,
                                 0x12, 0x64, 0xff, 0x05, 0x48, 0xc8};
     Procon2Reply card_reply =
         procon2_build_reply(card_req, sizeof(card_req), ctrl_addr_wire);
     assert(card_reply.valid);
     assert(!card_reply.is_crypto_placeholder);
     assert(card_reply.data[0] == kProcon2ReportPairing);
-    assert(std::memcmp(&card_reply.data[10], ctrl_addr_wire, 6) == 0);
+    assert(std::memcmp(&card_reply.data[11], ctrl_addr_wire, 6) == 0);
 
-    // 0x15 cmd 0x0004 crypto challenge -> placeholder reply, clearly flagged.
-    const uint8_t crypto_req[] = {0x15, 0x91, 0x04, 0x00, 0x11, 0x00, 0x00,
-                                  0x79, 0xb4, 0xdd, 0x21, 0x3b, 0xae, 0xe6, 0x8d,
-                                  0xfa, 0x68, 0x27, 0x66, 0xaa, 0x7c, 0xdb, 0xd8};
-    Procon2Reply crypto_reply =
-        procon2_build_reply(crypto_req, sizeof(crypto_req), ctrl_addr_wire);
-    assert(crypto_reply.valid);
-    assert(crypto_reply.is_crypto_placeholder);
-    assert(crypto_reply.data[0] == kProcon2ReportPairing);
+    // 0x15 subcmd 0x04 + 0x02 LTK challenge/response from
+    // BLE-captures/procon2-usb-handshake.pcapng:
+    //   A1 = 79b4dd213baee68dfa682766aa7cdbd8
+    //   B1 = 5cf6ee792cdf05e1ba2b6325c41a5f10
+    //   LTK = A1 XOR B1
+    //   B2 = AES-128-ECB(reverse(A2), key=reverse(LTK))
+    const uint8_t exchange_ltk_req[] = {
+        0x15, 0x91, 0x00, 0x04, 0x00, 0x11, 0x00, 0x00, 0x00,
+        0x79, 0xb4, 0xdd, 0x21, 0x3b, 0xae, 0xe6, 0x8d,
+        0xfa, 0x68, 0x27, 0x66, 0xaa, 0x7c, 0xdb, 0xd8,
+    };
+    Procon2Reply ltk_reply =
+        procon2_build_reply(exchange_ltk_req, sizeof(exchange_ltk_req), ctrl_addr_wire);
+    assert(ltk_reply.valid);
+    assert(!ltk_reply.is_crypto_placeholder);
+    const uint8_t fixed_b1[] = {
+        0x5c, 0xf6, 0xee, 0x79, 0x2c, 0xdf, 0x05, 0xe1,
+        0xba, 0x2b, 0x63, 0x25, 0xc4, 0x1a, 0x5f, 0x10,
+    };
+    assert(std::memcmp(&ltk_reply.data[9], fixed_b1, sizeof(fixed_b1)) == 0);
+
+    const uint8_t confirm_ltk_req[] = {
+        0x15, 0x91, 0x00, 0x02, 0x00, 0x11, 0x00, 0x00, 0x00,
+        0x99, 0xff, 0x1b, 0x0d, 0xa5, 0x3d, 0x73, 0xbc,
+        0x65, 0x31, 0x71, 0x17, 0x2e, 0x46, 0x77, 0x4c,
+    };
+    Procon2Reply confirm_reply =
+        procon2_build_reply(confirm_ltk_req, sizeof(confirm_ltk_req), ctrl_addr_wire);
+    assert(confirm_reply.valid);
+    assert(!confirm_reply.is_crypto_placeholder);
+    const uint8_t expected_b2[] = {
+        0xef, 0x49, 0xae, 0x18, 0xaa, 0x99, 0xc2, 0x6f,
+        0x98, 0x93, 0x49, 0xc9, 0x3f, 0xca, 0x60, 0xcd,
+    };
+    assert(std::memcmp(&confirm_reply.data[9], expected_b2, sizeof(expected_b2)) == 0);
 }
 
 } // namespace
