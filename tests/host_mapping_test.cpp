@@ -289,12 +289,12 @@ void test_switch_usb_reports()
     assert(usb.build_usb_response(kSwitchUsbCmdConnStatus, report));
     assert(report[0] == 0x81);
     assert(report[1] == 0x01);
-    assert(report[4] == 0x93);
-    assert(report[5] == 0x93);
-    assert(report[6] == 0xdf);
-    assert(report[7] == 0x67);
-    assert(report[8] == 0xcf);
-    assert(report[9] == 0x2c);
+    assert(report[4] == 0x73);
+    assert(report[5] == 0xdc);
+    assert(report[6] == 0xe6);
+    assert(report[7] == 0xe9);
+    assert(report[8] == 0xb6);
+    assert(report[9] == 0x98);
 
     assert(usb.build_subcommand_reply(kSwitchSubcmdRequestDeviceInfo,
                                       nullptr, 0, report));
@@ -304,9 +304,12 @@ void test_switch_usb_reports()
     assert(report[15] == 0x03);
     assert(report[17] == 0x03);
     assert(report[18] == 0x02);
-    assert(report[19] == 0x2c);
-    assert(report[20] == 0xcf);
-    assert(report[21] == 0x67);
+    assert(report[19] == 0x98);
+    assert(report[20] == 0xb6);
+    assert(report[21] == 0xe9);
+    assert(report[22] == 0xe6);
+    assert(report[23] == 0xdc);
+    assert(report[24] == 0x73);
     assert(report[25] == 0x01);
     assert(report[26] == 0x03);
 
@@ -317,12 +320,12 @@ void test_switch_usb_reports()
     assert(report[13] == 0x81);
     assert(report[14] == 0x01);
     assert(report[15] == 0x01);
-    assert(report[16] == 0x93);
-    assert(report[17] == 0x93);
-    assert(report[18] == 0xdf);
-    assert(report[19] == 0x67);
-    assert(report[20] == 0xcf);
-    assert(report[21] == 0x2c);
+    assert(report[16] == 0x73);
+    assert(report[17] == 0xdc);
+    assert(report[18] == 0xe6);
+    assert(report[19] == 0xe9);
+    assert(report[20] == 0xb6);
+    assert(report[21] == 0x98);
     assert(report[23] == 0x25);
     assert(report[24] == 0x08);
     assert(std::memcmp(&report[25], "Pro Controller", 14) == 0);

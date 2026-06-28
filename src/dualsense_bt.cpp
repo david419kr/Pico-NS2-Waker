@@ -1,5 +1,7 @@
 #include "ds5onswitch/dualsense_bt.h"
 
+#include "ds5onswitch/switch_identity.h"
+
 #include "btstack_event.h"
 #include "btstack_tlv.h"
 #include "btstack_util.h"
@@ -505,6 +507,11 @@ bool dualsense_bt_init()
     l2cap_add_event_handler(&g_l2cap_callback);
     g_hci_callback.callback = &hci_packet_handler;
     hci_add_event_handler(&g_hci_callback);
+
+    bd_addr_t switch_identity{};
+    std::memcpy(switch_identity, kSwitchProControllerBdAddr.data(),
+                kSwitchProControllerBdAddr.size());
+    hci_set_bd_addr(switch_identity);
 
     return hci_power_control(HCI_POWER_ON) == 0;
 }
