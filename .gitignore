@@ -12,3 +12,5 @@ build/
 .codebase-memory/
 AGENTS.md
 docs/
+BLE-captures/
+captures/
