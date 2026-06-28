@@ -582,18 +582,15 @@ void dualsense_bt_pause_for_switch2_wake()
     gap_inquiry_stop();
     gap_connectable_control(false);
     gap_discoverable_control(false);
-    (void)dualsense_bt_disconnect();
 }
 
 void dualsense_bt_resume_after_switch2_wake()
 {
     g_paused_for_switch2_wake = false;
+    if (g_acl_handle != HCI_CON_HANDLE_INVALID || g_hid_interrupt_cid != 0) {
+        return;
+    }
     maybe_start_inquiry();
-}
-
-bool __not_in_flash_func(dualsense_bt_is_radio_idle)()
-{
-    return g_acl_handle == HCI_CON_HANDLE_INVALID;
 }
 
 void dualsense_bt_bootsel_click_action()

@@ -17,13 +17,11 @@ namespace ds5onswitch {
 namespace {
 
 constexpr uint32_t kSwitch2WakeTlvTag = 0x5332574bu; // ASCII 'S2WK'
-constexpr uint32_t kPauseTimeoutMs = 2000;
 constexpr uint32_t kAdvertiseDurationMs = 20000;
 constexpr uint32_t kCooldownMs = 30000;
 
 enum class WakeState : uint8_t {
     Idle,
-    PausingDualSense,
     Advertising,
     Cooldown,
 };
@@ -227,8 +225,7 @@ bool switch2_wake_request()
 
     std::printf("[S2WK] Wake requested\n");
     dualsense_bt_pause_for_switch2_wake();
-    g_state = WakeState::PausingDualSense;
-    g_state_ms = now;
+    start_advertising();
     return true;
 }
 
@@ -246,15 +243,6 @@ void switch2_wake_service(bool usb_mounted)
 
     switch (g_state) {
     case WakeState::Idle:
-        break;
-
-    case WakeState::PausingDualSense:
-        if (dualsense_bt_is_radio_idle()) {
-            start_advertising();
-        } else if (now - g_state_ms >= kPauseTimeoutMs) {
-            std::printf("[S2WK] Pause timeout, advertise with ACL margin\n");
-            start_advertising();
-        }
         break;
 
     case WakeState::Advertising:
