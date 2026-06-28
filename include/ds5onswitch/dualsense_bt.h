@@ -17,6 +17,7 @@ enum class BtControllerKind {
     DualSense,
     DualShock4,
     SwitchPro,
+    Xbox,
 };
 
 using DualSenseBtDataCallback =

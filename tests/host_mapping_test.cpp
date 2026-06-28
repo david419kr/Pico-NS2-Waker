@@ -11,6 +11,7 @@
 #include "ds5onswitch/switch_pro.h"
 #include "ds5onswitch/switch_usb.h"
 #include "ds5onswitch/switch2_wake.h"
+#include "ds5onswitch/xbox_controller.h"
 
 #include <array>
 #include <cassert>
@@ -495,6 +496,195 @@ void test_steam_output_builders()
     assert(gatt_power[0] == kSteamCmdPowerOff);
     assert(gatt_power[1] == 4u);
     assert(std::memcmp(gatt_power.data() + 2u, "off!", 4) == 0);
+}
+
+void test_xbox_controller_input_parser_and_mapping()
+{
+    std::array<uint8_t, 20> report{};
+    report[0] = kXboxInputReportId;
+    report[1] = 0x00;
+    report[2] = 0x00;
+    report[3] = 0xff;
+    report[4] = 0xff;
+    report[5] = 0x00;
+    report[6] = 0x80;
+    report[7] = 0x00;
+    report[8] = 0x00;
+    report[9] = 0x40;
+    report[10] = 0x00;
+    report[11] = 0xff;
+    report[12] = 0x03;
+    report[13] = 2; // up-right
+    report[14] = static_cast<uint8_t>((1u << 0) | (1u << 3) |
+                                      (1u << 6)); // A, X, LB
+    report[15] = static_cast<uint8_t>((1u << 2) | (1u << 3) |
+                                      (1u << 4) | (1u << 5)); // Back, Menu, Guide, LS
+
+    XboxControllerInput input{};
+    assert(parse_xbox_bt_report(report.data(), report.size(), input));
+    assert(input.left_x == 0);
+    assert(input.left_y == 0xffff);
+    assert(input.right_x == 0x8000);
+    assert(input.right_y == 0);
+    assert(input.left_trigger == 0x0040);
+    assert(input.right_trigger == 0x03ff);
+    assert((input.buttons & kXboxBtnA) != 0);
+    assert((input.buttons & kXboxBtnX) != 0);
+    assert((input.buttons & kXboxBtnLeftBumper) != 0);
+    assert((input.buttons & kXboxBtnBack) != 0);
+    assert((input.buttons & kXboxBtnMenu) != 0);
+    assert((input.buttons & kXboxBtnGuide) != 0);
+    assert((input.buttons & kXboxBtnLeftStick) != 0);
+    assert((input.buttons & kXboxBtnDpadUp) != 0);
+    assert((input.buttons & kXboxBtnDpadRight) != 0);
+
+    const SwitchProState state = map_xbox_to_switch(input);
+    assert(state.left_x == 0);
+    assert(state.left_y == 0);
+    assert(state.right_x >= 0x7ff && state.right_x <= 0x800);
+    assert(state.right_y == 0x0fff);
+    assert((state.buttons & kNsB) != 0);
+    assert((state.buttons & kNsY) != 0);
+    assert((state.buttons & kNsL) != 0);
+    assert((state.buttons & kNsMinus) != 0);
+    assert((state.buttons & kNsPlus) != 0);
+    assert((state.buttons & kNsHome) != 0);
+    assert((state.buttons & kNsLeftStick) != 0);
+    assert((state.buttons & kNsUp) != 0);
+    assert((state.buttons & kNsRight) != 0);
+    assert((state.buttons & kNsZL) != 0);
+    assert((state.buttons & kNsZR) != 0);
+
+    std::array<uint8_t, 21> classic{};
+    classic[0] = 0xa1;
+    std::memcpy(classic.data() + 1u, report.data(), report.size());
+    XboxControllerInput classic_input{};
+    assert(parse_xbox_bt_report(classic.data(), classic.size(), classic_input));
+    assert(classic_input.buttons == input.buttons);
+
+    std::array<uint8_t, 20> legacy_back{};
+    legacy_back[0] = kXboxInputReportId;
+    legacy_back[16] = 1u;
+    XboxControllerInput legacy_input{};
+    assert(parse_xbox_bt_report(legacy_back.data(), legacy_back.size(),
+                                legacy_input));
+    assert((legacy_input.buttons & kXboxBtnBack) != 0);
+    const SwitchProState legacy_state = map_xbox_to_switch(legacy_input);
+    assert((legacy_state.buttons & kNsMinus) != 0);
+    assert((legacy_state.buttons & kNsCapture) == 0);
+
+    std::array<uint8_t, kXboxInputReportMinSize> compact{};
+    compact[0] = kXboxInputReportId;
+    compact[13] = 5; // down
+    compact[14] = static_cast<uint8_t>((1u << 0) | (1u << 2) |
+                                       (1u << 4) | (1u << 6) |
+                                       (1u << 7)); // A, X, LB, Back, Menu
+    compact[15] = static_cast<uint8_t>((1u << 0) | (1u << 1) |
+                                       (1u << 2)); // LS, RS, Guide
+    XboxControllerInput compact_input{};
+    assert(parse_xbox_bt_report(compact.data(), compact.size(),
+                                compact_input));
+    assert((compact_input.buttons & kXboxBtnA) != 0);
+    assert((compact_input.buttons & kXboxBtnX) != 0);
+    assert((compact_input.buttons & kXboxBtnLeftBumper) != 0);
+    assert((compact_input.buttons & kXboxBtnBack) != 0);
+    assert((compact_input.buttons & kXboxBtnMenu) != 0);
+    assert((compact_input.buttons & kXboxBtnLeftStick) != 0);
+    assert((compact_input.buttons & kXboxBtnRightStick) != 0);
+    assert((compact_input.buttons & kXboxBtnGuide) != 0);
+    assert((compact_input.buttons & kXboxBtnDpadDown) != 0);
+
+    std::array<uint8_t, 2> guide_report{kXboxGuideReportId, 0x01};
+    XboxControllerInput merged_guide{};
+    assert(parse_xbox_bt_report(compact.data(), compact.size(),
+                                merged_guide));
+    assert(parse_xbox_bt_report(guide_report.data(), guide_report.size(),
+                                merged_guide));
+    assert((merged_guide.buttons & kXboxBtnBack) != 0);
+    assert((merged_guide.buttons & kXboxBtnGuide) != 0);
+    assert(merged_guide.guide_report_active);
+
+    compact[15] = 0;
+    assert(parse_xbox_bt_report(compact.data(), compact.size(),
+                                merged_guide));
+    assert((merged_guide.buttons & kXboxBtnBack) != 0);
+    assert((merged_guide.buttons & kXboxBtnGuide) != 0);
+
+    guide_report[1] = 0x00;
+    assert(parse_xbox_bt_report(guide_report.data(), guide_report.size(),
+                                merged_guide));
+    assert((merged_guide.buttons & kXboxBtnBack) != 0);
+    assert((merged_guide.buttons & kXboxBtnGuide) == 0);
+    assert(!merged_guide.guide_report_active);
+}
+
+void test_xbox_persona_and_capture_combos()
+{
+    PersonaComboFilter filter;
+
+    (void)filter.process(kXboxBtnGuide, kXboxBtnGuide, kXboxBtnBack, 0);
+    PersonaComboFilterResult r =
+        filter.process(kXboxBtnGuide | kXboxBtnBack, kXboxBtnGuide,
+                       kXboxBtnBack, 8);
+    assert(r.request == PersonaComboRequest::None);
+    assert((r.buttons & kXboxBtnGuide) != 0);
+    assert((r.buttons & kXboxBtnBack) == 0);
+    r = filter.process(0, kXboxBtnGuide, kXboxBtnBack, 16);
+    assert(r.request == PersonaComboRequest::SwitchPro);
+
+    filter.reset();
+    (void)filter.process(kXboxBtnGuide, kXboxBtnGuide, kXboxBtnBack, 0);
+    (void)filter.process(kXboxBtnGuide | kXboxBtnBack, kXboxBtnGuide,
+                         kXboxBtnBack, 8);
+    (void)filter.process(kXboxBtnGuide, kXboxBtnGuide, kXboxBtnBack, 16);
+    (void)filter.process(kXboxBtnGuide | kXboxBtnBack, kXboxBtnGuide,
+                         kXboxBtnBack, 24);
+    (void)filter.process(kXboxBtnGuide, kXboxBtnGuide, kXboxBtnBack, 32);
+    r = filter.process(0, kXboxBtnGuide, kXboxBtnBack, 40);
+    assert(r.request == PersonaComboRequest::Switch2Pro);
+
+    XboxControllerInput capture{};
+    capture.buttons = kXboxBtnBack | kXboxBtnMenu;
+    if ((capture.buttons & (kXboxBtnBack | kXboxBtnMenu)) ==
+        (kXboxBtnBack | kXboxBtnMenu)) {
+        capture.buttons &= ~(kXboxBtnBack | kXboxBtnMenu);
+    }
+    SwitchProState state = map_xbox_to_switch(capture);
+    state.buttons |= kNsCapture;
+    assert((state.buttons & kNsCapture) != 0);
+    assert((state.buttons & kNsMinus) == 0);
+    assert((state.buttons & kNsPlus) == 0);
+}
+
+void test_xbox_rumble_output_builder()
+{
+    DualSenseHapticCommand haptics{};
+    haptics.active = true;
+    haptics.left_motor = 10;
+    haptics.right_motor = 20;
+    haptics.left_pulse = 30;
+    haptics.right_pulse = 40;
+
+    std::array<uint8_t, kXboxRumbleReportSize> out{};
+    const std::size_t len =
+        build_xbox_rumble_output(haptics, out.data(), out.size());
+    assert(len == kXboxRumbleReportSize);
+    assert(out[0] == kXboxRumbleReportId);
+    assert(out[1] == 0x0f);
+    assert(out[2] == 30);
+    assert(out[3] == 40);
+    assert(out[4] == 25);
+    assert(out[5] == 40);
+    assert(out[6] == 0xff);
+    assert(out[8] == 0xeb);
+
+    haptics = {};
+    const std::size_t stop_len =
+        build_xbox_rumble_output(haptics, out.data(), out.size());
+    assert(stop_len == kXboxRumbleReportSize);
+    assert(out[0] == kXboxRumbleReportId);
+    assert(out[6] == 0);
+    assert(out[8] == 0);
 }
 
 void test_dualsense_bt_input_parser()
@@ -1218,6 +1408,9 @@ int main()
     test_steam_controller_input_parser_and_mapping();
     test_steam_persona_combo_filter();
     test_steam_output_builders();
+    test_xbox_controller_input_parser_and_mapping();
+    test_xbox_persona_and_capture_combos();
+    test_xbox_rumble_output_builder();
     test_dualsense_bt_input_parser();
     test_dualsense_bt_output_report();
     test_dualshock4_bt_input_parser();

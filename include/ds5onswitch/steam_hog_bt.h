@@ -7,13 +7,22 @@
 
 namespace ds5onswitch {
 
-using SteamHogBtDataCallback = void (*)(const uint8_t *data, std::size_t size);
+enum class SteamHogBtControllerKind : uint8_t {
+    Unknown,
+    SteamController,
+    Xbox,
+};
+
+using SteamHogBtDataCallback = void (*)(SteamHogBtControllerKind kind,
+                                        const uint8_t *data,
+                                        std::size_t size);
 
 void steam_hog_bt_register_data_callback(SteamHogBtDataCallback callback);
 void steam_hog_bt_stack_init();
 void steam_hog_bt_service(uint32_t now_ms);
 
 bool steam_hog_bt_is_connected();
+SteamHogBtControllerKind steam_hog_bt_controller_kind();
 bool steam_hog_bt_send_switch_feedback(const SwitchUsbFeedback &feedback);
 bool steam_hog_bt_disconnect();
 bool steam_hog_bt_power_off();

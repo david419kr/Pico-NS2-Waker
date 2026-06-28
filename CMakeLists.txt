@@ -41,6 +41,7 @@ add_library(ds5onswitch_core
     src/switch_identity.cpp
     src/switch_pro.cpp
     src/switch_usb.cpp
+    src/xbox_controller.cpp
 )
 
 target_include_directories(ds5onswitch_core PUBLIC

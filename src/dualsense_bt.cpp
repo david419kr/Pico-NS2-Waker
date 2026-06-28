@@ -7,6 +7,7 @@
 #include "ds5onswitch/steam_hog_bt.h"
 #include "ds5onswitch/switch_identity.h"
 #include "ds5onswitch/switch_usb.h"
+#include "ds5onswitch/xbox_controller.h"
 
 #include "btstack_event.h"
 #include "btstack_tlv.h"
@@ -39,6 +40,7 @@ constexpr uint32_t kBlacklistPersistDelayMs = 5000;
 constexpr std::size_t kSdpAttributeBufferSize = 256;
 constexpr uint16_t kNintendoVendorId = 0x057e;
 constexpr uint16_t kSonyVendorId = 0x054c;
+constexpr uint16_t kMicrosoftVendorId = kXboxMicrosoftVid;
 constexpr uint16_t kSonyDualShock4Pid1 = 0x05c4;
 constexpr uint16_t kSonyDualShock4Pid2 = 0x09cc;
 constexpr uint16_t kSonyDualSensePid1 = 0x0ce6;
@@ -139,6 +141,8 @@ const char *controller_kind_name(BtControllerKind kind)
         return "DualShock 4";
     case BtControllerKind::SwitchPro:
         return "Switch Pro";
+    case BtControllerKind::Xbox:
+        return "Xbox";
     case BtControllerKind::Unknown:
     default:
         return "unknown";
@@ -203,6 +207,9 @@ BtControllerKind kind_from_eir(const uint8_t *eir, std::size_t size)
             if (contains_ascii(name, data_len, "DualSense")) {
                 return BtControllerKind::DualSense;
             }
+            if (contains_ascii(name, data_len, "Xbox")) {
+                return BtControllerKind::Xbox;
+            }
         }
         offset += static_cast<std::size_t>(field_len) + 1u;
     }
@@ -242,6 +249,9 @@ BtControllerKind kind_from_hid_report(const uint8_t *packet, std::size_t size)
         }
         break;
     case 0x01u:
+        if (report_size >= kXboxInputReportMinSize) {
+            return BtControllerKind::Xbox;
+        }
         // Some DS4-compatible pads start with the 10-byte minimal report or a
         // USB-shaped 0x01 report before full 0x11 reports are enabled.
         if (report_size >= kDualShock4BtMinimalReportSize &&
@@ -512,6 +522,8 @@ void classify_sdp_pnp_ids(uint16_t attribute_id)
                    g_sdp_product_id == kSonyDualSensePid2) {
             g_sdp_kind_hint = BtControllerKind::DualSense;
         }
+    } else if (g_sdp_vendor_id == kMicrosoftVendorId) {
+        g_sdp_kind_hint = BtControllerKind::Xbox;
     }
 
     if (g_sdp_kind_hint != BtControllerKind::Unknown) {
@@ -1044,6 +1056,8 @@ void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type,
                 set_controller_kind(BtControllerKind::DualSense);
             } else if (g_controller_kind_hint == BtControllerKind::DualShock4) {
                 set_controller_kind(BtControllerKind::DualShock4);
+            } else if (g_controller_kind_hint == BtControllerKind::Xbox) {
+                set_controller_kind(BtControllerKind::Xbox);
             } else {
                 request_initial_features();
             }

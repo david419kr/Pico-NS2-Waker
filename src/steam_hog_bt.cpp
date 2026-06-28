@@ -1,6 +1,7 @@
 #include "ds5onswitch/steam_hog_bt.h"
 
 #include "ds5onswitch/steam_controller.h"
+#include "ds5onswitch/xbox_controller.h"
 
 #include "ad_parser.h"
 #include "ble/gatt-service/hids_client.h"
@@ -31,6 +32,7 @@ constexpr std::size_t kTxQueueDepth = 12;
 constexpr std::size_t kTxPayloadMax = 64;
 constexpr uint8_t kAdvEventDirectInd = 0x01;
 constexpr uint16_t kValveCompanyId = 0x055d;
+constexpr uint16_t kMicrosoftCompanyId = 0x0006;
 constexpr uint8_t kValveGattServiceUuid[16] = {
     0x10, 0x0f, 0x6c, 0x32, 0x17, 0x35, 0x43, 0x13,
     0xb4, 0x02, 0x38, 0x56, 0x71, 0x31, 0xe5, 0xf3};
@@ -82,6 +84,8 @@ uint32_t g_last_left_pulse_ms = 0;
 uint32_t g_last_right_pulse_ms = 0;
 bool g_stack_ready = false;
 bool g_write_ready = false;
+SteamHogBtControllerKind g_controller_kind = SteamHogBtControllerKind::Unknown;
+SteamHogBtControllerKind g_last_seen_kind = SteamHogBtControllerKind::Unknown;
 ValveGattState g_valve_gatt_state = ValveGattState::Idle;
 bool g_valve_service_found = false;
 bool g_valve_power_off_pending = false;
@@ -284,6 +288,32 @@ bool adv_name_contains_steam(const uint8_t *data, uint8_t len, bool &has_name)
     return false;
 }
 
+bool adv_name_contains_xbox(const uint8_t *data, uint8_t len, bool &has_name)
+{
+    has_name = false;
+    uint8_t pos = 0;
+    while (pos < len) {
+        const uint8_t field_len = data[pos++];
+        if (field_len == 0u) {
+            break;
+        }
+        if (static_cast<uint16_t>(pos) + field_len > len || field_len < 1u) {
+            break;
+        }
+        const uint8_t type = data[pos++];
+        const uint8_t value_len = static_cast<uint8_t>(field_len - 1u);
+        const uint8_t *value = &data[pos];
+        if (type == 0x08u || type == 0x09u) {
+            has_name = true;
+            if (bytes_contain_ci(value, value_len, "xbox")) {
+                return true;
+            }
+        }
+        pos = static_cast<uint8_t>(pos + value_len);
+    }
+    return false;
+}
+
 bool ad_data_contains_company_id(const uint8_t *data, uint8_t len,
                                  uint16_t company_id)
 {
@@ -334,6 +364,41 @@ bool adv_is_steam_controller(const uint8_t *packet)
     bool has_name = false;
     const bool name_is_steam = adv_name_contains_steam(ad_data, ad_len, has_name);
     return name_is_steam || !has_name;
+}
+
+bool adv_is_xbox_controller(const uint8_t *packet)
+{
+    const uint8_t *ad_data = gap_event_advertising_report_get_data(packet);
+    const uint8_t ad_len = gap_event_advertising_report_get_data_length(packet);
+    const bool has_hid =
+        ad_data_contains_uuid16(ad_len, ad_data,
+                                ORG_BLUETOOTH_SERVICE_HUMAN_INTERFACE_DEVICE);
+    if (!has_hid) {
+        return false;
+    }
+
+    bool has_name = false;
+    if (adv_name_contains_xbox(ad_data, ad_len, has_name)) {
+        return true;
+    }
+    return ad_data_contains_company_id(ad_data, ad_len, kMicrosoftCompanyId);
+}
+
+SteamHogBtControllerKind kind_from_hog_report(const uint8_t *report,
+                                              uint16_t report_len)
+{
+    if (report == nullptr || report_len == 0u) {
+        return SteamHogBtControllerKind::Unknown;
+    }
+    if (report[0] == kSteamControllerReportState ||
+        report[0] == kSteamControllerReportStateLegacy) {
+        return SteamHogBtControllerKind::SteamController;
+    }
+    if (report[0] == kXboxInputReportId &&
+        report_len >= kXboxInputReportMinSize) {
+        return SteamHogBtControllerKind::Xbox;
+    }
+    return SteamHogBtControllerKind::Unknown;
 }
 
 bool adv_is_steam_reconnect_directed(const uint8_t *packet)
@@ -473,6 +538,7 @@ void enqueue_pulse(uint8_t side, uint8_t pulse, uint32_t now_ms,
 void clear_runtime_state(bool schedule_scan)
 {
     reset_valve_gatt();
+    g_controller_kind = SteamHogBtControllerKind::Unknown;
     g_con_handle = HCI_CON_HANDLE_INVALID;
     g_hids_cid = 0;
     g_write_ready = false;
@@ -510,16 +576,23 @@ void stop_scan()
     }
 }
 
-void connect_to_advertiser(uint8_t *packet)
+void connect_to_advertiser(uint8_t *packet, SteamHogBtControllerKind kind)
 {
     gap_event_advertising_report_get_address(packet, g_remote_addr);
     g_remote_addr_type = static_cast<bd_addr_type_t>(
         gap_event_advertising_report_get_address_type(packet));
+    g_controller_kind =
+        kind == SteamHogBtControllerKind::Unknown ? g_last_seen_kind : kind;
+    if (g_controller_kind != SteamHogBtControllerKind::Unknown) {
+        g_last_seen_kind = g_controller_kind;
+    }
     gap_stop_scan();
     g_state = SteamHogState::Connecting;
     g_state_ms = now_ms();
-    std::printf("[SC-BLE] Connect %s type=%u\n", bd_addr_to_str(g_remote_addr),
-                static_cast<unsigned>(g_remote_addr_type));
+    std::printf("[SC-BLE] Connect %s type=%u kind=%u\n",
+                bd_addr_to_str(g_remote_addr),
+                static_cast<unsigned>(g_remote_addr_type),
+                static_cast<unsigned>(g_controller_kind));
     const uint8_t status = gap_connect(g_remote_addr, g_remote_addr_type);
     if (status != ERROR_CODE_SUCCESS) {
         std::printf("[SC-BLE] gap_connect failed status=0x%02x\n", status);
@@ -639,7 +712,9 @@ void hids_packet_handler(uint8_t packet_type, uint16_t channel,
         std::printf("[SC-BLE] HIDS connected cid=0x%04x services=%u\n",
                     g_hids_cid,
                     gattservice_subevent_hid_service_connected_get_num_instances(packet));
-        enqueue_init_commands();
+        if (g_controller_kind == SteamHogBtControllerKind::SteamController) {
+            enqueue_init_commands();
+        }
         break;
     }
 
@@ -657,8 +732,14 @@ void hids_packet_handler(uint8_t packet_type, uint16_t channel,
             gattservice_subevent_hid_report_get_report(packet);
         const uint16_t report_len =
             gattservice_subevent_hid_report_get_report_len(packet);
+        if (g_controller_kind == SteamHogBtControllerKind::Unknown) {
+            g_controller_kind = kind_from_hog_report(report, report_len);
+            if (g_controller_kind != SteamHogBtControllerKind::Unknown) {
+                g_last_seen_kind = g_controller_kind;
+            }
+        }
         if (g_data_callback != nullptr && report_len != 0u) {
-            g_data_callback(report, report_len);
+            g_data_callback(g_controller_kind, report, report_len);
         }
         break;
     }
@@ -732,10 +813,17 @@ void hci_packet_handler(uint8_t packet_type, uint16_t channel,
         break;
 
     case GAP_EVENT_ADVERTISING_REPORT:
-        if (g_state == SteamHogState::Scanning &&
-            (adv_is_steam_controller(packet) ||
-             adv_is_steam_reconnect_directed(packet))) {
-            connect_to_advertiser(packet);
+        if (g_state == SteamHogState::Scanning) {
+            if (adv_is_steam_controller(packet)) {
+                connect_to_advertiser(
+                    packet, SteamHogBtControllerKind::SteamController);
+            } else if (adv_is_xbox_controller(packet)) {
+                connect_to_advertiser(packet,
+                                      SteamHogBtControllerKind::Xbox);
+            } else if (adv_is_steam_reconnect_directed(packet)) {
+                connect_to_advertiser(
+                    packet, SteamHogBtControllerKind::Unknown);
+            }
         }
         break;
 
@@ -831,7 +919,8 @@ void steam_hog_bt_service(uint32_t now_ms)
         }
     }
 
-    if (state_is_connected()) {
+    if (state_is_connected() &&
+        g_controller_kind == SteamHogBtControllerKind::SteamController) {
         if (g_valve_power_off_pending) {
             (void)try_pending_valve_power_off();
         } else if (g_valve_gatt_state == ValveGattState::Idle &&
@@ -841,6 +930,7 @@ void steam_hog_bt_service(uint32_t now_ms)
     }
 
     if (state_is_connected() &&
+        g_controller_kind == SteamHogBtControllerKind::SteamController &&
         static_cast<int32_t>(now_ms - g_next_heartbeat_ms) >= 0) {
         enqueue_init_commands();
         g_next_heartbeat_ms = now_ms + kInitHeartbeatMs;
@@ -853,9 +943,32 @@ bool steam_hog_bt_is_connected()
     return state_is_connected();
 }
 
+SteamHogBtControllerKind steam_hog_bt_controller_kind()
+{
+    return state_is_connected() ? g_controller_kind
+                                : SteamHogBtControllerKind::Unknown;
+}
+
 bool steam_hog_bt_send_switch_feedback(const SwitchUsbFeedback &feedback)
 {
     if (!state_is_connected() || !feedback.has_rumble) {
+        return false;
+    }
+
+    if (g_controller_kind == SteamHogBtControllerKind::Xbox) {
+        uint8_t report[kXboxRumbleReportSize]{};
+        const std::size_t len =
+            build_xbox_rumble_output(feedback.haptics, report, sizeof(report));
+        if (len == 0u) {
+            return false;
+        }
+        const bool queued =
+            enqueue_hid_report(report, len, HID_REPORT_TYPE_OUTPUT);
+        try_tx();
+        return queued;
+    }
+
+    if (g_controller_kind != SteamHogBtControllerKind::SteamController) {
         return false;
     }
 
@@ -906,7 +1019,8 @@ bool steam_hog_bt_disconnect()
 
 bool steam_hog_bt_power_off()
 {
-    if (!steam_link_open_for_gatt()) {
+    if (!steam_link_open_for_gatt() ||
+        g_controller_kind != SteamHogBtControllerKind::SteamController) {
         return false;
     }
 

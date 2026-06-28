@@ -17,6 +17,7 @@
 #include "ds5onswitch/switch_usb.h"
 #include "ds5onswitch/switch2_wake_runtime.h"
 #include "ds5onswitch/usb_descriptors.h"
+#include "ds5onswitch/xbox_controller.h"
 
 #include "bsp/board_api.h"
 #include "cyw43.h"
@@ -54,6 +55,7 @@ uint32_t g_last_ds_buttons = 0;
 uint32_t g_last_ds4_buttons = 0;
 uint32_t g_last_ns_buttons = 0;
 uint32_t g_last_steam_buttons = 0;
+uint32_t g_last_xbox_buttons = 0;
 bool g_home_wake_pending = false;
 uint32_t g_home_wake_pending_ms = 0;
 bool g_auto_wake_armed = false;
@@ -63,6 +65,10 @@ PersonaComboFilter g_persona_combo_filter;
 SwitchReport g_procon_passthrough_report{};
 bool g_procon_passthrough_valid = false;
 uint32_t g_debug_log_read_offset = 0;
+DualSenseHapticCommand g_xbox_haptics{};
+uint32_t g_last_xbox_output_ms = 0;
+bool g_xbox_output_dirty = false;
+XboxControllerInput g_xbox_input{};
 
 constexpr uint32_t kUsbUnmountDebounceMs = 1000;
 constexpr uint32_t kHomeWakePendingWindowMs = 3000;
@@ -271,9 +277,56 @@ bool bt_controller_is_switch_pro()
     return dualsense_bt_controller_kind() == BtControllerKind::SwitchPro;
 }
 
+bool bt_controller_is_xbox()
+{
+    return dualsense_bt_controller_kind() == BtControllerKind::Xbox;
+}
+
 bool bt_controller_connected()
 {
     return dualsense_bt_is_connected() || steam_hog_bt_is_connected();
+}
+
+bool steam_hog_controller_is_xbox()
+{
+    return steam_hog_bt_controller_kind() == SteamHogBtControllerKind::Xbox;
+}
+
+void __not_in_flash_func(handle_xbox_input)(XboxControllerInput input)
+{
+    const uint32_t now = board_millis();
+    const PersonaComboFilterResult combo =
+        g_persona_combo_filter.process(input.buttons, kXboxBtnGuide,
+                                       kXboxBtnBack, now);
+    input.buttons = combo.buttons;
+    if (combo.request == PersonaComboRequest::SwitchPro) {
+        select_switch_pro_persona();
+    } else if (combo.request == PersonaComboRequest::Switch2Pro) {
+        select_switch2_pro_persona();
+    }
+
+    const bool capture_combo =
+        (input.buttons & (kXboxBtnBack | kXboxBtnMenu)) ==
+        (kXboxBtnBack | kXboxBtnMenu);
+    if (capture_combo) {
+        input.buttons &= ~(kXboxBtnBack | kXboxBtnMenu);
+    }
+
+    const bool home_down = (input.buttons & kXboxBtnGuide) != 0;
+    const bool home_edge =
+        home_down && (g_last_xbox_buttons & kXboxBtnGuide) == 0;
+    g_last_xbox_buttons = input.buttons;
+    if (home_edge) {
+        g_home_wake_pending = true;
+        g_home_wake_pending_ms = now;
+    }
+
+    g_procon_passthrough_valid = false;
+    SwitchProState state = map_xbox_to_switch(input);
+    if (capture_combo) {
+        state.buttons |= kNsCapture;
+    }
+    g_switch_usb.set_state(state);
 }
 
 void __not_in_flash_func(on_dualsense_bt_data)(DualSenseBtChannel channel,
@@ -316,6 +369,14 @@ void __not_in_flash_func(on_dualsense_bt_data)(DualSenseBtChannel channel,
             g_procon_passthrough_valid = true;
         }
         g_switch_usb.set_state(state);
+        return;
+    }
+
+    if (bt_controller_is_xbox()) {
+        if (!parse_xbox_bt_report(data, size, g_xbox_input)) {
+            return;
+        }
+        handle_xbox_input(g_xbox_input);
         return;
     }
 
@@ -398,9 +459,18 @@ void __not_in_flash_func(on_dualsense_bt_data)(DualSenseBtChannel channel,
     g_switch_usb.set_state(map_dualsense_to_switch(input));
 }
 
-void __not_in_flash_func(on_steam_hog_bt_data)(const uint8_t *data,
+void __not_in_flash_func(on_steam_hog_bt_data)(SteamHogBtControllerKind kind,
+                                               const uint8_t *data,
                                                std::size_t size)
 {
+    if (kind == SteamHogBtControllerKind::Xbox) {
+        if (!parse_xbox_bt_report(data, size, g_xbox_input)) {
+            return;
+        }
+        handle_xbox_input(g_xbox_input);
+        return;
+    }
+
     SteamControllerInput input{};
     if (!parse_steam_controller_report(data, size, input)) {
         return;
@@ -440,13 +510,16 @@ void __not_in_flash_func(apply_switch_feedback)(
     if (feedback.haptics.active) {
         g_ds_output.apply_haptics(feedback.haptics);
         g_ds4_output.apply_haptics(feedback.haptics);
+        g_xbox_haptics = feedback.haptics;
         g_last_haptics_ms = board_millis();
     } else {
         g_ds_output.clear_motors();
         g_ds4_output.clear_motors();
+        g_xbox_haptics = {};
     }
     g_ds_output_dirty = true;
     g_ds4_output_dirty = true;
+    g_xbox_output_dirty = true;
 }
 
 void __not_in_flash_func(forward_switch_output_to_bt_procon)(
@@ -480,12 +553,16 @@ void __not_in_flash_func(service_dualsense_connection)()
         dualsense_audio_set_connected(false);
         g_ds_output.reset();
         g_ds4_output.reset();
+        g_xbox_haptics = {};
         g_ds_output_dirty = false;
         g_ds4_output_dirty = false;
+        g_xbox_output_dirty = false;
         g_ds_mute_button_down = false;
         g_last_ds_buttons = 0;
         g_last_ds4_buttons = 0;
         g_last_ns_buttons = 0;
+        g_last_xbox_buttons = 0;
+        g_xbox_input = {};
         g_procon_passthrough_valid = false;
         g_persona_combo_filter.reset();
         if (steam_hog_bt_is_connected()) {
@@ -515,18 +592,25 @@ void __not_in_flash_func(service_dualsense_connection)()
 
     const bool dualsense_connected = kind == BtControllerKind::DualSense;
     const bool dualshock4_connected = kind == BtControllerKind::DualShock4;
+    const bool xbox_connected = kind == BtControllerKind::Xbox;
     dualsense_audio_set_connected(dualsense_connected);
     g_ds_output.reset();
     g_ds4_output.reset();
+    g_xbox_haptics = {};
     g_ds_output.set_mic_muted(dualsense_audio_mic_muted());
     g_ds_output_dirty = dualsense_connected;
     g_ds4_output_dirty = dualshock4_connected;
+    g_xbox_output_dirty = false;
     if (!dualsense_connected) {
         g_ds_mute_button_down = false;
         g_last_ds_buttons = 0;
     }
     if (!dualshock4_connected) {
         g_last_ds4_buttons = 0;
+    }
+    if (!xbox_connected) {
+        g_last_xbox_buttons = 0;
+        g_xbox_input = {};
     }
 }
 
@@ -543,6 +627,8 @@ void __not_in_flash_func(service_steam_connection)()
 
     if (!connected) {
         g_last_steam_buttons = 0;
+        g_last_xbox_buttons = 0;
+        g_xbox_input = {};
         if (dualsense_bt_is_connected()) {
             return;
         }
@@ -682,6 +768,33 @@ void __not_in_flash_func(service_dualshock4_output)()
     if (dualsense_bt_send_raw_output_report(report.data(), report.size())) {
         g_last_ds4_output_ms = now;
         g_ds4_output_dirty = false;
+    }
+}
+
+void __not_in_flash_func(service_xbox_output)()
+{
+    if (!dualsense_bt_is_connected() || !bt_controller_is_xbox()) {
+        return;
+    }
+
+    const uint32_t now = board_millis();
+    if (g_xbox_haptics.active && now - g_last_haptics_ms > 96u) {
+        g_xbox_haptics = {};
+        g_xbox_output_dirty = true;
+    }
+
+    if (!g_xbox_output_dirty &&
+        (!g_xbox_haptics.active || now - g_last_xbox_output_ms < 20u)) {
+        return;
+    }
+
+    uint8_t report[kXboxRumbleReportSize]{};
+    const std::size_t len =
+        build_xbox_rumble_output(g_xbox_haptics, report, sizeof(report));
+    if (len != 0u &&
+        dualsense_bt_send_raw_output_report(report, len)) {
+        g_last_xbox_output_ms = now;
+        g_xbox_output_dirty = false;
     }
 }
 
@@ -836,6 +949,7 @@ void __no_inline_not_in_flash_func(app_loop)()
         dualsense_audio_loop(g_ds_output, g_ds_output_sequence);
         service_dualsense_output();
         service_dualshock4_output();
+        service_xbox_output();
         service_switch2_registration();
         service_usb_reports();
         service_usb_reconnect();

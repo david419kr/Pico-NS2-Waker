@@ -36,6 +36,7 @@ $Exe = Join-Path $OutDir 'host_mapping_test.exe'
     (Join-Path $RepoRoot 'src\switch_identity.cpp') `
     (Join-Path $RepoRoot 'src\switch_pro.cpp') `
     (Join-Path $RepoRoot 'src\switch_usb.cpp') `
+    (Join-Path $RepoRoot 'src\xbox_controller.cpp') `
     (Join-Path $RepoRoot 'tests\host_mapping_test.cpp') `
     -o $Exe
 
