@@ -36,6 +36,12 @@ constexpr uint32_t kBlacklistPersistDelayMs = 5000;
 constexpr std::size_t kSdpAttributeBufferSize = 256;
 constexpr uint16_t kNintendoVendorId = 0x057e;
 constexpr uint16_t kSonyVendorId = 0x054c;
+constexpr uint8_t kHidSetReportFeature = 0x53;
+constexpr uint8_t kDualSenseFeatureReportBluetoothControl = 0x08;
+constexpr std::size_t kDualSenseBluetoothControlPayloadSize = 47;
+constexpr uint8_t kDualSenseBluetoothControlOff = 0x02;
+constexpr uint8_t kDualSenseFeatureCrcSeed = 0x53;
+constexpr uint8_t kHciDisconnectRemoteUserTerminated = 0x13;
 
 enum class SdpProbe {
     None,
@@ -1121,18 +1127,44 @@ bool __not_in_flash_func(dualsense_bt_send_raw_output_report)(
     return true;
 }
 
+bool __not_in_flash_func(dualsense_bt_power_off)()
+{
+    if (g_controller_kind != BtControllerKind::DualSense ||
+        g_hid_control_cid == 0) {
+        return false;
+    }
+
+    uint8_t packet[2u + kDualSenseBluetoothControlPayloadSize]{};
+    packet[0] = kHidSetReportFeature;
+    packet[1] = kDualSenseFeatureReportBluetoothControl;
+    packet[2] = kDualSenseBluetoothControlOff;
+
+    const uint32_t crc = dualsense_crc32_seeded(
+        kDualSenseFeatureCrcSeed, packet + 1u, sizeof(packet) - 1u - 4u);
+    packet[sizeof(packet) - 4u] = static_cast<uint8_t>(crc);
+    packet[sizeof(packet) - 3u] = static_cast<uint8_t>(crc >> 8u);
+    packet[sizeof(packet) - 2u] = static_cast<uint8_t>(crc >> 16u);
+    packet[sizeof(packet) - 1u] = static_cast<uint8_t>(crc >> 24u);
+
+    const uint8_t status =
+        l2cap_send(g_hid_control_cid, packet, sizeof(packet));
+    if (status != ERROR_CODE_SUCCESS) {
+        std::printf("[BT] DualSense power-off failed status=0x%02x\n", status);
+        return false;
+    }
+
+    std::printf("[BT] DualSense power-off requested\n");
+    return true;
+}
+
 bool dualsense_bt_disconnect()
 {
     if (g_acl_handle == HCI_CON_HANDLE_INVALID) {
         return false;
     }
 
-    const uint8_t status = gap_disconnect(g_acl_handle);
-    if (status != ERROR_CODE_SUCCESS &&
-        status != ERROR_CODE_COMMAND_DISALLOWED) {
-        std::printf("[BT] Disconnect request failed status=0x%02x\n", status);
-        return false;
-    }
+    hci_send_cmd(&hci_disconnect, g_acl_handle,
+                 kHciDisconnectRemoteUserTerminated);
     return true;
 }
 

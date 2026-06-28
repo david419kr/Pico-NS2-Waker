@@ -27,6 +27,7 @@ bool dualsense_bt_is_connected();
 BtControllerKind dualsense_bt_controller_kind();
 bool dualsense_bt_send_output_report(const DualSenseBtOutputReport &report);
 bool dualsense_bt_send_raw_output_report(const uint8_t *report, std::size_t size);
+bool dualsense_bt_power_off();
 bool dualsense_bt_disconnect();
 void dualsense_bt_bootsel_click_action();
 void dualsense_bt_forget_pairings();

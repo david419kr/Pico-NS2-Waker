@@ -118,6 +118,14 @@ void stop_advertising()
     }
 }
 
+void disconnect_classic_controller_for_wake()
+{
+    std::printf("[S2WK] Wake requested, power off/disconnect controller "
+                "before advertise\n");
+    (void)dualsense_bt_power_off();
+    (void)dualsense_bt_disconnect();
+}
+
 void finish_attempt(bool apply_cooldown)
 {
     stop_advertising();
@@ -225,6 +233,7 @@ bool switch2_wake_request()
 
     std::printf("[S2WK] Wake requested\n");
     dualsense_bt_pause_for_switch2_wake();
+    disconnect_classic_controller_for_wake();
     start_advertising();
     return true;
 }

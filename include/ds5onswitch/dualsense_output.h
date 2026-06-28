@@ -35,6 +35,8 @@ private:
 };
 
 uint32_t dualsense_output_crc32(const uint8_t *data, std::size_t size);
+uint32_t dualsense_crc32_seeded(uint8_t seed, const uint8_t *data,
+                                std::size_t size);
 void fill_dualsense_output_crc(DualSenseBtOutputReport &report);
 void fill_dualsense_output_crc(uint8_t *report, std::size_t size);
 

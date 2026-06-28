@@ -142,17 +142,24 @@ DualSenseBtOutputReport __not_in_flash_func(DualSenseOutputState::build_report)(
     return report;
 }
 
-uint32_t __not_in_flash_func(dualsense_output_crc32)(const uint8_t *data,
+uint32_t __not_in_flash_func(dualsense_crc32_seeded)(uint8_t seed,
+                                                     const uint8_t *data,
                                                      std::size_t size)
 {
-    constexpr uint32_t kSeedA2 = 0xeada2d49u;
-    uint32_t crc = ~kSeedA2;
+    uint32_t crc = 0xffffffffu;
+    crc = (crc >> 8u) ^ kCrc32Lookup[(crc ^ seed) & 0xffu];
 
     while (size-- > 0) {
         crc = (crc >> 8u) ^ kCrc32Lookup[(crc ^ *data++) & 0xffu];
     }
 
     return ~crc;
+}
+
+uint32_t __not_in_flash_func(dualsense_output_crc32)(const uint8_t *data,
+                                                     std::size_t size)
+{
+    return dualsense_crc32_seeded(0xa2u, data, size);
 }
 
 void __not_in_flash_func(fill_dualsense_output_crc)(
