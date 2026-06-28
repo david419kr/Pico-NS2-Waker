@@ -712,10 +712,22 @@ void test_xbox_rumble_output_builder()
     assert(out[1] == 0x0f);
     assert(out[2] == 0);
     assert(out[3] == 0);
-    assert(out[4] == 25);
-    assert(out[5] == 40);
+    assert(out[4] == 7);
+    assert(out[5] == 14);
     assert(out[6] == 0xff);
     assert(out[8] == 0xeb);
+
+    haptics.left_motor = 120;
+    haptics.right_motor = 80;
+    haptics.left_pulse = 255;
+    haptics.right_pulse = 128;
+    const std::size_t strong_len =
+        build_xbox_rumble_output(haptics, out.data(), out.size());
+    assert(strong_len == kXboxRumbleReportSize);
+    assert(out[2] == 0);
+    assert(out[3] == 0);
+    assert(out[4] == 96);
+    assert(out[5] == 66);
 
     haptics = {};
     const std::size_t stop_len =

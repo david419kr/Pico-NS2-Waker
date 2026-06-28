@@ -13,6 +13,8 @@ constexpr uint16_t kXboxTriggerMask = 0x03ff;
 constexpr uint8_t kXboxRumbleAllMotors = 0x0f;
 constexpr uint8_t kXboxRumbleSustain10Ms = 0xff;
 constexpr uint8_t kXboxRumbleLoopCount = 0xeb;
+constexpr uint8_t kXboxRumblePulseFloor = 64;
+constexpr uint8_t kXboxRumbleMax = 96;
 
 uint16_t read_u16_le(const uint8_t *p)
 {
@@ -83,9 +85,15 @@ void set_button(uint32_t &buttons, uint16_t bits, uint8_t bit,
 
 uint8_t rumble_mix(uint8_t body, uint8_t pulse)
 {
-    const uint16_t mixed =
-        static_cast<uint16_t>(body) + static_cast<uint16_t>(pulse) / 2u;
-    return static_cast<uint8_t>(std::min<uint16_t>(mixed, 255u));
+    const uint16_t body_scaled =
+        (static_cast<uint16_t>(body) * 70u + 50u) / 100u;
+    const uint16_t pulse_scaled = pulse > kXboxRumblePulseFloor ?
+        ((static_cast<uint16_t>(pulse - kXboxRumblePulseFloor) * 15u + 50u) /
+         100u) :
+        0u;
+    const uint16_t mixed = body_scaled + pulse_scaled;
+    return static_cast<uint8_t>(
+        std::min<uint16_t>(mixed, kXboxRumbleMax));
 }
 
 bool parse_prefixed_input_report(const uint8_t *wire, std::size_t wire_size,
