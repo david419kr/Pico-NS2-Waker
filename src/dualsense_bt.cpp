@@ -1,6 +1,8 @@
 #include "ds5onswitch/dualsense_bt.h"
 
 #include "ds5onswitch/bt_debug_log.h"
+#include "ds5onswitch/dualshock4_output.h"
+#include "ds5onswitch/dualshock4_report.h"
 #include "ds5onswitch/dualsense_report.h"
 #include "ds5onswitch/steam_hog_bt.h"
 #include "ds5onswitch/switch_identity.h"
@@ -37,6 +39,11 @@ constexpr uint32_t kBlacklistPersistDelayMs = 5000;
 constexpr std::size_t kSdpAttributeBufferSize = 256;
 constexpr uint16_t kNintendoVendorId = 0x057e;
 constexpr uint16_t kSonyVendorId = 0x054c;
+constexpr uint16_t kSonyDualShock4Pid1 = 0x05c4;
+constexpr uint16_t kSonyDualShock4Pid2 = 0x09cc;
+constexpr uint16_t kSonyDualSensePid1 = 0x0ce6;
+constexpr uint16_t kSonyDualSensePid2 = 0x0df2;
+constexpr uint16_t kSdpPnpProductIdAttribute = 0x0202;
 constexpr uint8_t kHidSetReportFeature = 0x53;
 constexpr uint8_t kDualSenseFeatureReportBluetoothControl = 0x08;
 constexpr std::size_t kDualSenseBluetoothControlPayloadSize = 47;
@@ -77,6 +84,7 @@ BtControllerKind g_controller_kind = BtControllerKind::Unknown;
 BtControllerKind g_controller_kind_hint = BtControllerKind::Unknown;
 bool g_dualsense_init_sent = false;
 bool g_dualsense_features_requested = false;
+bool g_dualshock4_init_sent = false;
 bool g_switch_pro_init_sent = false;
 bool g_unknown_interrupt_report_logged = false;
 bool g_logged_first_control_data = false;
@@ -87,6 +95,8 @@ uint8_t g_sdp_attribute[kSdpAttributeBufferSize]{};
 uint16_t g_sdp_attribute_id = 0;
 uint16_t g_sdp_attribute_len = 0;
 uint8_t g_sdp_previous_attribute_byte = 0;
+uint16_t g_sdp_vendor_id = 0;
+uint16_t g_sdp_product_id = 0;
 
 void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type,
                                              uint16_t channel,
@@ -124,6 +134,8 @@ const char *controller_kind_name(BtControllerKind kind)
     switch (kind) {
     case BtControllerKind::DualSense:
         return "DualSense";
+    case BtControllerKind::DualShock4:
+        return "DualShock 4";
     case BtControllerKind::SwitchPro:
         return "Switch Pro";
     case BtControllerKind::Unknown:
@@ -187,8 +199,7 @@ BtControllerKind kind_from_eir(const uint8_t *eir, std::size_t size)
             if (contains_ascii(name, data_len, "Pro Controller")) {
                 return BtControllerKind::SwitchPro;
             }
-            if (contains_ascii(name, data_len, "DualSense") ||
-                contains_ascii(name, data_len, "Wireless Controller")) {
+            if (contains_ascii(name, data_len, "DualSense")) {
                 return BtControllerKind::DualSense;
             }
         }
@@ -224,6 +235,19 @@ BtControllerKind kind_from_hid_report(const uint8_t *packet, std::size_t size)
             return BtControllerKind::DualSense;
         }
         break;
+    case 0x11u:
+        if (report_size >= 2u) {
+            return BtControllerKind::DualShock4;
+        }
+        break;
+    case 0x01u:
+        // Some DS4-compatible pads start with the 10-byte minimal report or a
+        // USB-shaped 0x01 report before full 0x11 reports are enabled.
+        if (report_size >= kDualShock4BtMinimalReportSize &&
+            report_size <= 64u) {
+            return BtControllerKind::DualShock4;
+        }
+        break;
     default:
         break;
     }
@@ -244,6 +268,7 @@ void reset_connection_state()
     g_controller_kind_hint = BtControllerKind::Unknown;
     g_dualsense_init_sent = false;
     g_dualsense_features_requested = false;
+    g_dualshock4_init_sent = false;
     g_switch_pro_init_sent = false;
     g_unknown_interrupt_report_logged = false;
     g_logged_first_control_data = false;
@@ -253,6 +278,8 @@ void reset_connection_state()
     g_sdp_attribute_id = 0;
     g_sdp_attribute_len = 0;
     g_sdp_previous_attribute_byte = 0;
+    g_sdp_vendor_id = 0;
+    g_sdp_product_id = 0;
 }
 
 void open_hid_control()
@@ -340,6 +367,21 @@ void send_initial_output()
     dualsense_bt_send_output_report(report);
 }
 
+void send_dualshock4_initial_output()
+{
+    if (g_hid_interrupt_cid == 0) {
+        return;
+    }
+    if (g_dualshock4_init_sent) {
+        return;
+    }
+    g_dualshock4_init_sent = true;
+    DualShock4OutputState state{};
+    state.reset();
+    const DualShock4BtOutputReport report = state.build_report();
+    (void)dualsense_bt_send_raw_output_report(report.data(), report.size());
+}
+
 void send_switch_pro_subcommand(uint8_t subcommand, uint8_t arg)
 {
     uint8_t report[12] = {
@@ -388,6 +430,8 @@ void set_controller_kind(BtControllerKind kind)
     if (kind == BtControllerKind::DualSense) {
         request_initial_features();
         send_initial_output();
+    } else if (kind == BtControllerKind::DualShock4) {
+        send_dualshock4_initial_output();
     } else if (kind == BtControllerKind::SwitchPro) {
         send_switch_pro_init();
     }
@@ -435,12 +479,37 @@ bool start_sdp_probe(SdpProbe probe)
     return true;
 }
 
+void classify_sdp_pnp_ids(uint16_t attribute_id)
+{
+    if (g_sdp_vendor_id == kNintendoVendorId) {
+        g_sdp_kind_hint = BtControllerKind::SwitchPro;
+    } else if (g_sdp_vendor_id == kSonyVendorId) {
+        if (g_sdp_product_id == kSonyDualShock4Pid1 ||
+            g_sdp_product_id == kSonyDualShock4Pid2) {
+            g_sdp_kind_hint = BtControllerKind::DualShock4;
+        } else if (g_sdp_product_id == kSonyDualSensePid1 ||
+                   g_sdp_product_id == kSonyDualSensePid2) {
+            g_sdp_kind_hint = BtControllerKind::DualSense;
+        }
+    }
+
+    if (g_sdp_kind_hint != BtControllerKind::Unknown) {
+        bt_debug_log_event(BtDebugEvent::SdpComplete,
+                           controller_kind_code(g_sdp_kind_hint),
+                           attribute_id,
+                           (static_cast<uint32_t>(g_sdp_vendor_id) << 16u) |
+                               g_sdp_product_id);
+    }
+}
+
 bool start_controller_kind_probe()
 {
     if (g_controller_kind_hint != BtControllerKind::Unknown) {
         return false;
     }
     g_sdp_kind_hint = BtControllerKind::Unknown;
+    g_sdp_vendor_id = 0;
+    g_sdp_product_id = 0;
     return start_sdp_probe(SdpProbe::Pnp);
 }
 
@@ -448,18 +517,11 @@ void process_sdp_attribute(uint16_t attribute_id, const uint8_t *data,
                            uint16_t len)
 {
     if (attribute_id == BLUETOOTH_ATTRIBUTE_VENDOR_ID) {
-        const uint16_t vendor_id = sdp_uint16_value(data, len);
-        if (vendor_id == kNintendoVendorId) {
-            g_sdp_kind_hint = BtControllerKind::SwitchPro;
-            bt_debug_log_event(BtDebugEvent::SdpComplete,
-                               controller_kind_code(g_sdp_kind_hint),
-                               BLUETOOTH_ATTRIBUTE_VENDOR_ID, vendor_id);
-        } else if (vendor_id == kSonyVendorId) {
-            g_sdp_kind_hint = BtControllerKind::DualSense;
-            bt_debug_log_event(BtDebugEvent::SdpComplete,
-                               controller_kind_code(g_sdp_kind_hint),
-                               BLUETOOTH_ATTRIBUTE_VENDOR_ID, vendor_id);
-        }
+        g_sdp_vendor_id = sdp_uint16_value(data, len);
+        classify_sdp_pnp_ids(attribute_id);
+    } else if (attribute_id == kSdpPnpProductIdAttribute) {
+        g_sdp_product_id = sdp_uint16_value(data, len);
+        classify_sdp_pnp_ids(attribute_id);
     }
 }
 
@@ -770,6 +832,7 @@ void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type,
             g_controller_kind = BtControllerKind::Unknown;
             g_dualsense_init_sent = false;
             g_dualsense_features_requested = false;
+            g_dualshock4_init_sent = false;
             g_switch_pro_init_sent = false;
             g_acl_handle =
                 hci_event_connection_complete_get_connection_handle(packet);
@@ -957,8 +1020,8 @@ void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type,
                 set_controller_kind(BtControllerKind::SwitchPro);
             } else if (g_controller_kind_hint == BtControllerKind::DualSense) {
                 set_controller_kind(BtControllerKind::DualSense);
-            } else {
-                request_initial_features();
+            } else if (g_controller_kind_hint == BtControllerKind::DualShock4) {
+                set_controller_kind(BtControllerKind::DualShock4);
             }
             if (g_local_acl_initiated) {
                 open_next_outgoing_hid_channel();
@@ -971,13 +1034,13 @@ void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type,
             blacklist_remove(g_current_addr);
             gap_connectable_control(false);
             gap_discoverable_control(false);
-            if (g_controller_kind_hint == BtControllerKind::SwitchPro) {
+            if (g_controller_kind_hint != BtControllerKind::Unknown) {
                 set_controller_kind(g_controller_kind_hint);
-            } else {
-                set_controller_kind(BtControllerKind::DualSense);
             }
             if (g_controller_kind == BtControllerKind::DualSense) {
                 send_initial_output();
+            } else if (g_controller_kind == BtControllerKind::DualShock4) {
+                send_dualshock4_initial_output();
             } else if (g_controller_kind == BtControllerKind::SwitchPro) {
                 send_switch_pro_init();
             }

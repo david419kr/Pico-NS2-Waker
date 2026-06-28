@@ -28,6 +28,8 @@ FetchContent_Declare(opus
 FetchContent_MakeAvailable(opus)
 
 add_library(ds5onswitch_core
+    src/dualshock4_output.cpp
+    src/dualshock4_report.cpp
     src/dualsense_output.cpp
     src/dualsense_report.cpp
     src/haptics.cpp

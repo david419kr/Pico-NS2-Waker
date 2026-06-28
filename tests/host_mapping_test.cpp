@@ -1,4 +1,6 @@
 #include "ds5onswitch/dualsense_output.h"
+#include "ds5onswitch/dualshock4_output.h"
+#include "ds5onswitch/dualshock4_report.h"
 #include "ds5onswitch/dualsense_report.h"
 #include "ds5onswitch/haptics.h"
 #include "ds5onswitch/mapper.h"
@@ -607,6 +609,126 @@ void test_dualsense_bt_output_report()
     assert(!state.motors_active());
 }
 
+void test_dualshock4_bt_input_parser()
+{
+    std::array<uint8_t, kDualShock4Bt11ReportSize + 1u> report{};
+    report[0] = 0xa1;
+    report[1] = 0x11;
+    uint8_t *wire = report.data() + 1u;
+    wire[3] = 11;
+    wire[4] = 22;
+    wire[5] = 33;
+    wire[6] = 44;
+    wire[7] = 0x10 | 0x20 | static_cast<uint8_t>(DualSenseDpad::UpRight);
+    wire[8] = 0x01 | 0x02 | 0x04 | 0x08 | 0x10 | 0x20 | 0x40 | 0x80;
+    wire[9] = 0x01 | 0x02;
+    wire[10] = 77;
+    wire[11] = 88;
+    write_i16_le(wire + 15, 100);
+    write_i16_le(wire + 17, -200);
+    write_i16_le(wire + 19, 300);
+    write_i16_le(wire + 21, 4000);
+    write_i16_le(wire + 23, -5000);
+    write_i16_le(wire + 25, 6000);
+
+    DualSenseInput parsed{};
+    assert(parse_dualshock4_bt_report(report.data(), report.size(), parsed));
+    assert(parsed.left_x == 11);
+    assert(parsed.left_y == 22);
+    assert(parsed.right_x == 33);
+    assert(parsed.right_y == 44);
+    assert(parsed.l2 == 77);
+    assert(parsed.r2 == 88);
+    assert(parsed.dpad == DualSenseDpad::UpRight);
+    assert((parsed.buttons & kDs5Square) != 0);
+    assert((parsed.buttons & kDs5Cross) != 0);
+    assert((parsed.buttons & kDs5L1) != 0);
+    assert((parsed.buttons & kDs5R1) != 0);
+    assert((parsed.buttons & kDs5L2Button) != 0);
+    assert((parsed.buttons & kDs5R2Button) != 0);
+    assert((parsed.buttons & kDs5Create) != 0);
+    assert((parsed.buttons & kDs5Options) != 0);
+    assert((parsed.buttons & kDs5L3) != 0);
+    assert((parsed.buttons & kDs5R3) != 0);
+    assert((parsed.buttons & kDs5Ps) != 0);
+    assert((parsed.buttons & kDs5TouchpadClick) != 0);
+    assert(parsed.has_imu);
+    assert(parsed.gyro_x == 100);
+    assert(parsed.gyro_y == -200);
+    assert(parsed.gyro_z == 300);
+    assert(parsed.accel_x == 4000);
+    assert(parsed.accel_y == -5000);
+    assert(parsed.accel_z == 6000);
+
+    const SwitchProState state = map_dualsense_to_switch(parsed);
+    assert((state.buttons & kNsB) != 0);
+    assert((state.buttons & kNsY) != 0);
+    assert((state.buttons & kNsMinus) != 0);
+    assert((state.buttons & kNsPlus) != 0);
+    assert((state.buttons & kNsHome) != 0);
+    assert((state.buttons & kNsCapture) != 0);
+    assert((state.buttons & kNsUp) != 0);
+    assert((state.buttons & kNsRight) != 0);
+
+    std::array<uint8_t, kDualShock4BtMinimalReportSize> minimal{};
+    minimal[0] = 0x01;
+    minimal[1] = 1;
+    minimal[2] = 2;
+    minimal[3] = 3;
+    minimal[4] = 4;
+    minimal[5] = 0x40 | static_cast<uint8_t>(DualSenseDpad::Down);
+    minimal[6] = 0x80;
+    minimal[7] = 0x01;
+    minimal[8] = 9;
+    minimal[9] = 10;
+
+    DualSenseInput mini{};
+    assert(parse_dualshock4_bt_report(minimal.data(), minimal.size(), mini));
+    assert(mini.left_x == 1);
+    assert(mini.right_y == 4);
+    assert(mini.l2 == 9);
+    assert(mini.r2 == 10);
+    assert(mini.dpad == DualSenseDpad::Down);
+    assert((mini.buttons & kDs5Circle) != 0);
+    assert((mini.buttons & kDs5R3) != 0);
+    assert((mini.buttons & kDs5Ps) != 0);
+    assert(!mini.has_imu);
+}
+
+void test_dualshock4_bt_output_report()
+{
+    DualShock4OutputState state;
+    state.reset();
+    assert(!state.motors_active());
+
+    DualSenseHapticCommand command{};
+    command.left_motor = 32;
+    command.right_pulse = 160;
+    command.active = true;
+    state.apply_haptics(command);
+    assert(state.motors_active());
+
+    const DualShock4BtOutputReport report = state.build_report();
+    assert(report[0] == 0x11);
+    assert(report[1] == 0xc4);
+    assert((report[3] & 0x03u) == 0x03u);
+    assert(report[6] > 0);
+    assert(report[7] == 32);
+    assert(report[10] == 0x10);
+
+    const uint32_t expected_crc =
+        dualshock4_output_crc32(report.data(), report.size() - 4u);
+    const uint32_t actual_crc =
+        static_cast<uint32_t>(report[74]) |
+        (static_cast<uint32_t>(report[75]) << 8u) |
+        (static_cast<uint32_t>(report[76]) << 16u) |
+        (static_cast<uint32_t>(report[77]) << 24u);
+    assert(actual_crc == expected_crc);
+
+    state.clear_motors();
+    assert(!state.motors_active());
+}
+
 void test_switch_usb_reports()
 {
     SwitchUsbEmulator usb;
@@ -1059,6 +1181,8 @@ int main()
     test_steam_output_builders();
     test_dualsense_bt_input_parser();
     test_dualsense_bt_output_report();
+    test_dualshock4_bt_input_parser();
+    test_dualshock4_bt_output_report();
     test_switch_usb_reports();
     test_switch2_wake_adv_builder();
     test_switch2_pro_button_bytes();

@@ -15,6 +15,7 @@ enum class DualSenseBtChannel {
 enum class BtControllerKind {
     Unknown,
     DualSense,
+    DualShock4,
     SwitchPro,
 };
 

@@ -2,6 +2,8 @@
 #include "ds5onswitch/bootsel_button.h"
 #include "ds5onswitch/bt_debug_log.h"
 #include "ds5onswitch/debug_flags.h"
+#include "ds5onswitch/dualshock4_output.h"
+#include "ds5onswitch/dualshock4_report.h"
 #include "ds5onswitch/dualsense_audio.h"
 #include "ds5onswitch/dualsense_bt.h"
 #include "ds5onswitch/dualsense_output.h"
@@ -32,12 +34,15 @@ namespace {
 
 SwitchUsbEmulator g_switch_usb;
 DualSenseOutputState g_ds_output;
+DualShock4OutputState g_ds4_output;
 std::array<SwitchReport, 3> g_pending_reports{};
 uint8_t g_pending_count = 0;
 uint8_t g_ds_output_sequence = 0;
 uint32_t g_last_haptics_ms = 0;
 uint32_t g_last_ds_output_ms = 0;
+uint32_t g_last_ds4_output_ms = 0;
 bool g_ds_output_dirty = false;
+bool g_ds4_output_dirty = false;
 UsbAudioPersona g_usb_persona = UsbAudioPersona::HidOnly;
 bool g_usb_reconnect_pending = false;
 uint32_t g_usb_reconnect_at_ms = 0;
@@ -46,6 +51,7 @@ bool g_ds_mute_button_down = false;
 bool g_usb_unmounted = false;
 uint32_t g_usb_unmounted_since_ms = 0;
 uint32_t g_last_ds_buttons = 0;
+uint32_t g_last_ds4_buttons = 0;
 uint32_t g_last_ns_buttons = 0;
 uint32_t g_last_steam_buttons = 0;
 bool g_home_wake_pending = false;
@@ -255,6 +261,11 @@ bool bt_controller_is_dualsense()
     return dualsense_bt_controller_kind() == BtControllerKind::DualSense;
 }
 
+bool bt_controller_is_dualshock4()
+{
+    return dualsense_bt_controller_kind() == BtControllerKind::DualShock4;
+}
+
 bool bt_controller_is_switch_pro()
 {
     return dualsense_bt_controller_kind() == BtControllerKind::SwitchPro;
@@ -305,6 +316,36 @@ void __not_in_flash_func(on_dualsense_bt_data)(DualSenseBtChannel channel,
             g_procon_passthrough_valid = true;
         }
         g_switch_usb.set_state(state);
+        return;
+    }
+
+    if (bt_controller_is_dualshock4()) {
+        DualSenseInput input{};
+        if (!parse_dualshock4_bt_report(data, size, input)) {
+            return;
+        }
+
+        const uint32_t now = board_millis();
+        const PersonaComboFilterResult combo =
+            g_persona_combo_filter.process(input.buttons, now);
+        input.buttons = combo.buttons;
+        if (combo.request == PersonaComboRequest::SwitchPro) {
+            select_switch_pro_persona();
+        } else if (combo.request == PersonaComboRequest::Switch2Pro) {
+            select_switch2_pro_persona();
+        }
+
+        const bool home_down = (input.buttons & kDs5Ps) != 0;
+        const bool home_edge =
+            home_down && (g_last_ds4_buttons & kDs5Ps) == 0;
+        g_last_ds4_buttons = input.buttons;
+        if (home_edge) {
+            g_home_wake_pending = true;
+            g_home_wake_pending_ms = now;
+        }
+
+        g_procon_passthrough_valid = false;
+        g_switch_usb.set_state(map_dualsense_to_switch(input));
         return;
     }
 
@@ -398,11 +439,14 @@ void __not_in_flash_func(apply_switch_feedback)(
 
     if (feedback.haptics.active) {
         g_ds_output.apply_haptics(feedback.haptics);
+        g_ds4_output.apply_haptics(feedback.haptics);
         g_last_haptics_ms = board_millis();
     } else {
         g_ds_output.clear_motors();
+        g_ds4_output.clear_motors();
     }
     g_ds_output_dirty = true;
+    g_ds4_output_dirty = true;
 }
 
 void __not_in_flash_func(forward_switch_output_to_bt_procon)(
@@ -435,9 +479,12 @@ void __not_in_flash_func(service_dualsense_connection)()
     if (!connected) {
         dualsense_audio_set_connected(false);
         g_ds_output.reset();
+        g_ds4_output.reset();
         g_ds_output_dirty = false;
+        g_ds4_output_dirty = false;
         g_ds_mute_button_down = false;
         g_last_ds_buttons = 0;
+        g_last_ds4_buttons = 0;
         g_last_ns_buttons = 0;
         g_procon_passthrough_valid = false;
         g_persona_combo_filter.reset();
@@ -467,13 +514,19 @@ void __not_in_flash_func(service_dualsense_connection)()
     }
 
     const bool dualsense_connected = kind == BtControllerKind::DualSense;
+    const bool dualshock4_connected = kind == BtControllerKind::DualShock4;
     dualsense_audio_set_connected(dualsense_connected);
     g_ds_output.reset();
+    g_ds4_output.reset();
     g_ds_output.set_mic_muted(dualsense_audio_mic_muted());
     g_ds_output_dirty = dualsense_connected;
+    g_ds4_output_dirty = dualshock4_connected;
     if (!dualsense_connected) {
         g_ds_mute_button_down = false;
         g_last_ds_buttons = 0;
+    }
+    if (!dualshock4_connected) {
+        g_last_ds4_buttons = 0;
     }
 }
 
@@ -605,6 +658,30 @@ void __not_in_flash_func(service_dualsense_output)()
     if (dualsense_bt_send_output_report(report)) {
         g_last_ds_output_ms = now;
         g_ds_output_dirty = false;
+    }
+}
+
+void __not_in_flash_func(service_dualshock4_output)()
+{
+    if (!dualsense_bt_is_connected() || !bt_controller_is_dualshock4()) {
+        return;
+    }
+
+    const uint32_t now = board_millis();
+    if (g_ds4_output.motors_active() && now - g_last_haptics_ms > 96u) {
+        g_ds4_output.clear_motors();
+        g_ds4_output_dirty = true;
+    }
+
+    if (!g_ds4_output_dirty &&
+        (!g_ds4_output.motors_active() || now - g_last_ds4_output_ms < 20u)) {
+        return;
+    }
+
+    const DualShock4BtOutputReport report = g_ds4_output.build_report();
+    if (dualsense_bt_send_raw_output_report(report.data(), report.size())) {
+        g_last_ds4_output_ms = now;
+        g_ds4_output_dirty = false;
     }
 }
 
@@ -758,6 +835,7 @@ void __no_inline_not_in_flash_func(app_loop)()
         service_switch2_wake_policy();
         dualsense_audio_loop(g_ds_output, g_ds_output_sequence);
         service_dualsense_output();
+        service_dualshock4_output();
         service_switch2_registration();
         service_usb_reports();
         service_usb_reconnect();
@@ -787,6 +865,7 @@ int main()
 
     bt_debug_log_init();
     g_ds_output.reset();
+    g_ds4_output.reset();
     usb_descriptors_set_controller_persona(UsbControllerPersona::SwitchPro);
     usb_descriptors_set_audio_persona(UsbAudioPersona::HidOnly);
     dualsense_audio_init();
