@@ -50,9 +50,11 @@ uint8_t g_switch2_report_counter = 0;
 // while PS is held are counted. On PS release, 1 tap selects the Switch Pro 1
 // persona (normal use) and 2 taps selects the Switch 2 Pro persona (business
 // card / pairing exchange only). Combo-consumed PS/touchpad presses are kept
-// out of the game input so they do not register as Home/Capture.
+// out of the game input so they do not register as Home/Capture; PS alone is
+// still emitted as a one-frame Home click on release.
 bool g_combo_ps_prev = false;
 bool g_combo_tp_prev = false;
+bool g_combo_suppress_tp_until_release = false;
 uint8_t g_combo_tap_count = 0;
 
 constexpr uint32_t kUsbUnmountDebounceMs = 1000;
@@ -247,6 +249,15 @@ void __not_in_flash_func(on_dualsense_bt_data)(DualSenseBtChannel channel,
     const bool tp_edge = tp_down && !g_combo_tp_prev;
     bool combo_consumed_ps = false;
     bool combo_consumed_tp = false;
+    bool synthesize_ps_click = false;
+
+    if (g_combo_suppress_tp_until_release) {
+        if (tp_down) {
+            combo_consumed_tp = true;
+        } else {
+            g_combo_suppress_tp_until_release = false;
+        }
+    }
 
     if (ps_down) {
         // While PS is held, every touchpad click is a combo tap, not Capture.
@@ -264,10 +275,16 @@ void __not_in_flash_func(on_dualsense_bt_data)(DualSenseBtChannel channel,
         } else if (g_combo_tap_count >= 2u) {
             select_switch2_pro_persona();
         }
-        if (g_combo_tap_count > 0u) {
+        if (g_combo_tap_count == 0u) {
+            // PS alone must keep its original Home/wake role. Since we hold PS
+            // back while checking for a combo, emit a one-frame Home click on
+            // release when no touchpad tap happened.
+            synthesize_ps_click = true;
+        } else {
             // A combo was issued; swallow the trailing touchpad state for one
-            // frame so the release does not leak into game input.
+            // or more frames so it does not leak into game input as Capture.
             combo_consumed_tp = tp_down;
+            g_combo_suppress_tp_until_release = tp_down;
         }
         g_combo_tap_count = 0u;
     }
@@ -282,6 +299,9 @@ void __not_in_flash_func(on_dualsense_bt_data)(DualSenseBtChannel channel,
     }
     if (combo_consumed_tp) {
         input.buttons &= ~static_cast<uint32_t>(kDs5TouchpadClick);
+    }
+    if (synthesize_ps_click) {
+        input.buttons |= static_cast<uint32_t>(kDs5Ps);
     }
 
     const bool home_down = (input.buttons & kDs5Ps) != 0;
@@ -348,6 +368,7 @@ void __not_in_flash_func(service_dualsense_connection)()
         g_usb_reconnect_pending = false;
         g_combo_ps_prev = false;
         g_combo_tp_prev = false;
+        g_combo_suppress_tp_until_release = false;
         g_combo_tap_count = 0;
         usb_descriptors_set_controller_persona(UsbControllerPersona::SwitchPro);
         g_usb_persona = UsbAudioPersona::HidOnly;
