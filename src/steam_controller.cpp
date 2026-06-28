@@ -170,6 +170,13 @@ void map_left_trackpad_dpad(const SteamControllerInput &input,
     map_dpad_dir(dir, switch_buttons);
 }
 
+bool right_trackpad_active(const SteamControllerInput &input)
+{
+    return (input.buttons &
+            (kSteamBtnRightPadTouch | kSteamBtnRightPadClick)) != 0u ||
+           input.right_pad_force != 0;
+}
+
 uint16_t motor_to_u16(uint8_t value)
 {
     return static_cast<uint16_t>(value) * 257u;
@@ -302,6 +309,9 @@ SwitchProState map_steam_to_switch(const SteamControllerInput &input)
     if (input.buttons & kSteamBtnSteam) {
         buttons |= kNsHome;
     }
+    if (input.buttons & kSteamBtnSteamMenu) {
+        buttons |= kNsCapture;
+    }
     if (steam_trigger_to_u8(input.left_trigger) > 0u) {
         buttons |= kNsZL;
     }
@@ -309,14 +319,20 @@ SwitchProState map_steam_to_switch(const SteamControllerInput &input)
         buttons |= kNsZR;
     }
     if (input.buttons & kSteamBtnRightPadClick) {
-        buttons |= kNsCapture;
+        buttons |= kNsRightStick;
     }
+
+    const bool use_right_pad = right_trackpad_active(input);
+    const int16_t right_x =
+        use_right_pad ? input.right_pad_x : input.right_stick_x;
+    const int16_t right_y =
+        use_right_pad ? input.right_pad_y : input.right_stick_y;
 
     state.buttons = buttons;
     state.left_x = steam_axis_to_switch12(input.left_stick_x);
     state.left_y = steam_axis_to_switch12(input.left_stick_y);
-    state.right_x = steam_axis_to_switch12(input.right_stick_x);
-    state.right_y = steam_axis_to_switch12(input.right_stick_y);
+    state.right_x = steam_axis_to_switch12(right_x);
+    state.right_y = steam_axis_to_switch12(right_y);
 
     if (input.has_imu) {
         state.has_imu = true;

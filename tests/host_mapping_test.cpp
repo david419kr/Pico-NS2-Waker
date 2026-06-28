@@ -265,8 +265,8 @@ void test_steam_controller_input_parser_and_mapping()
         kSteamBtnA | kSteamBtnB | kSteamBtnX | kSteamBtnY |
         kSteamBtnLeftBumper | kSteamBtnRightBumper | kSteamBtnView |
         kSteamBtnMenu | kSteamBtnLeftStick | kSteamBtnRightStick |
-        kSteamBtnSteam | kSteamBtnRightPadClick | kSteamBtnDpadUp |
-        kSteamBtnDpadRight;
+        kSteamBtnSteam | kSteamBtnSteamMenu | kSteamBtnRightPadClick |
+        kSteamBtnDpadUp | kSteamBtnDpadRight;
     write_u32_le(&report[2], buttons);
     write_u16_le(&report[6], 0x0080);
     write_u16_le(&report[8], 0xffff);
@@ -317,14 +317,35 @@ void test_steam_controller_input_parser_and_mapping()
     assert((state.buttons & kNsRight) != 0);
     assert(state.left_x == 0);
     assert(state.left_y == 2048);
-    assert(state.right_x == 0x0fff);
-    assert(state.right_y == 2047);
+    assert(state.right_x == steam_axis_to_switch12(input.right_pad_x));
+    assert(state.right_y == steam_axis_to_switch12(input.right_pad_y));
     assert(state.accel_x == steam_accel_to_switch(input.accel_y));
     assert(state.accel_y == steam_accel_to_switch(static_cast<int16_t>(-input.accel_x)));
     assert(state.accel_z == steam_accel_to_switch(input.accel_z));
     assert(state.gyro_x == input.gyro_y);
     assert(state.gyro_y == static_cast<int16_t>(-input.gyro_x));
     assert(state.gyro_z == input.gyro_z);
+
+    SteamControllerInput no_right_pad = input;
+    no_right_pad.buttons &= ~(kSteamBtnRightPadTouch | kSteamBtnRightPadClick);
+    no_right_pad.right_pad_force = 0;
+    const SwitchProState no_right_pad_state = map_steam_to_switch(no_right_pad);
+    assert(no_right_pad_state.right_x ==
+           steam_axis_to_switch12(input.right_stick_x));
+    assert(no_right_pad_state.right_y ==
+           steam_axis_to_switch12(input.right_stick_y));
+
+    SteamControllerInput right_pad_click_only{};
+    right_pad_click_only.buttons = kSteamBtnRightPadClick;
+    const SwitchProState right_pad_click_state =
+        map_steam_to_switch(right_pad_click_only);
+    assert((right_pad_click_state.buttons & kNsRightStick) != 0);
+    assert((right_pad_click_state.buttons & kNsCapture) == 0);
+
+    SteamControllerInput qam_capture{};
+    qam_capture.buttons = kSteamBtnSteamMenu;
+    const SwitchProState qam_capture_state = map_steam_to_switch(qam_capture);
+    assert((qam_capture_state.buttons & kNsCapture) != 0);
 
     constexpr uint32_t dpad_mask = kNsUp | kNsRight | kNsDown | kNsLeft;
     std::array<uint8_t, kSteamControllerStateReportSize> pad_report{};
