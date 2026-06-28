@@ -25,6 +25,10 @@ if (-not (Get-Command arm-none-eabi-gcc -ErrorAction SilentlyContinue)) {
 if (-not $?) {
     throw "CYW43 BD_ADDR patch failed."
 }
+& (Join-Path $PSScriptRoot 'patch-btstack-hids-client.ps1') -PicoSdkPath $env:PICO_SDK_PATH
+if (-not $?) {
+    throw "BTstack HIDS client patch failed."
+}
 
 $FullBuildDir = Join-Path $RepoRoot $BuildDir
 if ($Clean -and (Test-Path $FullBuildDir)) {

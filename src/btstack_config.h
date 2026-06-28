@@ -32,7 +32,7 @@
 #define ENABLE_GATT_CLIENT_PAIRING
 #define MAX_NR_GATT_CLIENTS 1
 #define MAX_NR_HIDS_CLIENTS 1
-#define MAX_NUM_HID_SERVICES 2
+#define MAX_NUM_HID_SERVICES 4
 // pico_btstack_ble builds the ATT DB helper even though wake-only advertising
 // does not register GATT services. Keep the static DB tiny but defined.
 #define MAX_ATT_DB_SIZE 16

@@ -13,6 +13,9 @@ constexpr uint8_t kXboxInputReportId = 0x01;
 constexpr uint8_t kXboxGuideReportId = 0x02;
 constexpr uint8_t kXboxRumbleReportId = 0x03;
 constexpr std::size_t kXboxInputReportMinSize = 16;
+constexpr std::size_t kXboxElite2InputPayloadSize = 19;
+constexpr std::size_t kXboxElite2InputReportSize =
+    kXboxElite2InputPayloadSize + 1u;
 constexpr std::size_t kXboxRumbleReportSize = 9;
 
 enum XboxControllerButton : uint32_t {

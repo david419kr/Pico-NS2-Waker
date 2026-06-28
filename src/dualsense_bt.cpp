@@ -468,7 +468,8 @@ void continue_hid_open_after_probe()
         g_controller_kind_hint = g_sdp_kind_hint;
     }
 
-    if (g_controller_kind_hint == BtControllerKind::SwitchPro) {
+    if (g_controller_kind_hint == BtControllerKind::SwitchPro ||
+        g_controller_kind_hint == BtControllerKind::Xbox) {
         open_next_outgoing_hid_channel();
         return;
     }

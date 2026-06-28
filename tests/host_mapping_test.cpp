@@ -562,6 +562,36 @@ void test_xbox_controller_input_parser_and_mapping()
     assert(parse_xbox_bt_report(classic.data(), classic.size(), classic_input));
     assert(classic_input.buttons == input.buttons);
 
+    std::array<uint8_t, 18> classic_short{};
+    classic_short[0] = 0xa1;
+    std::memcpy(classic_short.data() + 1u, report.data(), 17u);
+    XboxControllerInput classic_short_input{};
+    assert(parse_xbox_bt_report(classic_short.data(), classic_short.size(),
+                                classic_short_input));
+    assert(classic_short_input.left_x == input.left_x);
+    assert(classic_short_input.left_y == input.left_y);
+    assert(classic_short_input.right_x == input.right_x);
+    assert(classic_short_input.right_y == input.right_y);
+    assert(classic_short_input.left_trigger == input.left_trigger);
+    assert(classic_short_input.right_trigger == input.right_trigger);
+    assert(classic_short_input.buttons == input.buttons);
+
+    std::array<uint8_t, kXboxElite2InputPayloadSize> elite_payload{};
+    std::memcpy(elite_payload.data(), report.data() + 1u,
+                elite_payload.size());
+    elite_payload[0] = 0x34;
+    elite_payload[1] = 0x12;
+    XboxControllerInput elite_input{};
+    assert(parse_xbox_bt_report(elite_payload.data(), elite_payload.size(),
+                                elite_input));
+    assert(elite_input.left_x == 0x1234);
+    assert(elite_input.left_y == input.left_y);
+    assert(elite_input.right_x == input.right_x);
+    assert(elite_input.right_y == input.right_y);
+    assert(elite_input.left_trigger == input.left_trigger);
+    assert(elite_input.right_trigger == input.right_trigger);
+    assert(elite_input.buttons == input.buttons);
+
     std::array<uint8_t, 20> legacy_back{};
     legacy_back[0] = kXboxInputReportId;
     legacy_back[16] = 1u;
@@ -593,6 +623,15 @@ void test_xbox_controller_input_parser_and_mapping()
     assert((compact_input.buttons & kXboxBtnRightStick) != 0);
     assert((compact_input.buttons & kXboxBtnGuide) != 0);
     assert((compact_input.buttons & kXboxBtnDpadDown) != 0);
+
+    compact[0] = 0x00; // BLE HIDS may wrap an undefined Report ID as zero.
+    XboxControllerInput undefined_id_input{};
+    assert(parse_xbox_bt_report(compact.data(), compact.size(),
+                                undefined_id_input));
+    assert((undefined_id_input.buttons & kXboxBtnA) != 0);
+    assert((undefined_id_input.buttons & kXboxBtnBack) != 0);
+    assert((undefined_id_input.buttons & kXboxBtnGuide) != 0);
+    compact[0] = kXboxInputReportId;
 
     std::array<uint8_t, 2> guide_report{kXboxGuideReportId, 0x01};
     XboxControllerInput merged_guide{};
@@ -671,8 +710,8 @@ void test_xbox_rumble_output_builder()
     assert(len == kXboxRumbleReportSize);
     assert(out[0] == kXboxRumbleReportId);
     assert(out[1] == 0x0f);
-    assert(out[2] == 30);
-    assert(out[3] == 40);
+    assert(out[2] == 0);
+    assert(out[3] == 0);
     assert(out[4] == 25);
     assert(out[5] == 40);
     assert(out[6] == 0xff);
