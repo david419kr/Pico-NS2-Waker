@@ -2,6 +2,8 @@
 #include "ds5onswitch/dualsense_report.h"
 #include "ds5onswitch/haptics.h"
 #include "ds5onswitch/mapper.h"
+#include "ds5onswitch/procon2_handshake.h"
+#include "ds5onswitch/switch_identity.h"
 #include "ds5onswitch/switch_pro.h"
 #include "ds5onswitch/switch_usb.h"
 #include "ds5onswitch/switch2_wake.h"
@@ -453,6 +455,84 @@ void test_switch2_wake_adv_builder()
     assert(!switch2_wake_addr_valid(nullptr));
 }
 
+void test_switch_identity_runtime()
+{
+    // Default identity is the captured Pro Controller fallback.
+    assert(switch_identity_bd_addr() == kSwitchProControllerBdAddrFallback);
+
+    // A valid override (e.g. the Pico's own factory address) is accepted.
+    const SwitchControllerBdAddr radio_identity{0x2c, 0xcf, 0x67, 0x12, 0x34, 0x56};
+    switch_identity_set_bd_addr(radio_identity);
+    assert(switch_identity_bd_addr() == radio_identity);
+
+    // All-zero / all-ff are rejected (unusable addresses keep last value).
+    switch_identity_set_bd_addr(SwitchControllerBdAddr{0, 0, 0, 0, 0, 0});
+    assert(switch_identity_bd_addr() == radio_identity);
+    switch_identity_set_bd_addr(
+        SwitchControllerBdAddr{0xff, 0xff, 0xff, 0xff, 0xff, 0xff});
+    assert(switch_identity_bd_addr() == radio_identity);
+
+    // The USB Switch Pro persona must report the overridden identity. Device
+    // info carries display order; conn-status carries reversed wire order.
+    SwitchUsbEmulator usb;
+    SwitchReport report{};
+    assert(usb.build_subcommand_reply(kSwitchSubcmdRequestDeviceInfo, nullptr, 0,
+                                      report));
+    for (std::size_t i = 0; i < radio_identity.size(); ++i) {
+        assert(report[19 + i] == radio_identity[i]);
+    }
+    assert(usb.build_usb_response(kSwitchUsbCmdConnStatus, report));
+    for (std::size_t i = 0; i < radio_identity.size(); ++i) {
+        assert(report[4 + i] == radio_identity[radio_identity.size() - 1 - i]);
+    }
+
+    // Restore the default so later tests that assume the fallback still pass.
+    switch_identity_set_bd_addr(kSwitchProControllerBdAddrFallback);
+    assert(switch_identity_bd_addr() == kSwitchProControllerBdAddrFallback);
+}
+
+void test_procon2_handshake_replies()
+{
+    const uint8_t ctrl_addr_wire[] = {0x56, 0x34, 0x12, 0x67, 0xcf, 0x2c};
+
+    // Non-handshake input yields no reply.
+    const uint8_t junk[] = {0x09, 0x23, 0x00};
+    assert(!procon2_is_handshake_request(junk, sizeof(junk)));
+    assert(!procon2_build_reply(junk, sizeof(junk), ctrl_addr_wire).valid);
+
+    // 0x03 console MAC announce -> ack reply (report id + device direction).
+    const uint8_t mac_req[] = {0x03, 0x91, 0x0d, 0x00, 0x08, 0x00, 0x00,
+                               0x01, 0x00, 0x13, 0x64, 0xff, 0x05, 0x48, 0xc8};
+    assert(procon2_is_handshake_request(mac_req, sizeof(mac_req)));
+    Procon2Reply mac_reply =
+        procon2_build_reply(mac_req, sizeof(mac_req), ctrl_addr_wire);
+    assert(mac_reply.valid);
+    assert(!mac_reply.is_crypto_placeholder);
+    assert(mac_reply.data[0] == kProcon2ReportMac);
+    assert(mac_reply.data[1] == kProcon2DirDeviceReply);
+
+    // 0x15 cmd 0x0001 business-card -> reply embeds controller's own wire addr.
+    const uint8_t card_req[] = {0x15, 0x91, 0x01, 0x00, 0x0e, 0x00, 0x00, 0x02,
+                                0x13, 0x64, 0xff, 0x05, 0x48, 0xc8,
+                                0x12, 0x64, 0xff, 0x05, 0x48, 0xc8};
+    Procon2Reply card_reply =
+        procon2_build_reply(card_req, sizeof(card_req), ctrl_addr_wire);
+    assert(card_reply.valid);
+    assert(!card_reply.is_crypto_placeholder);
+    assert(card_reply.data[0] == kProcon2ReportPairing);
+    assert(std::memcmp(&card_reply.data[10], ctrl_addr_wire, 6) == 0);
+
+    // 0x15 cmd 0x0004 crypto challenge -> placeholder reply, clearly flagged.
+    const uint8_t crypto_req[] = {0x15, 0x91, 0x04, 0x00, 0x11, 0x00, 0x00,
+                                  0x79, 0xb4, 0xdd, 0x21, 0x3b, 0xae, 0xe6, 0x8d,
+                                  0xfa, 0x68, 0x27, 0x66, 0xaa, 0x7c, 0xdb, 0xd8};
+    Procon2Reply crypto_reply =
+        procon2_build_reply(crypto_req, sizeof(crypto_req), ctrl_addr_wire);
+    assert(crypto_reply.valid);
+    assert(crypto_reply.is_crypto_placeholder);
+    assert(crypto_reply.data[0] == kProcon2ReportPairing);
+}
+
 } // namespace
 
 int main()
@@ -465,5 +545,7 @@ int main()
     test_dualsense_bt_output_report();
     test_switch_usb_reports();
     test_switch2_wake_adv_builder();
+    test_switch_identity_runtime();
+    test_procon2_handshake_replies();
     return 0;
 }
