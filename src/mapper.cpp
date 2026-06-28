@@ -9,6 +9,8 @@ namespace {
 
 constexpr int32_t kSwitchAccelCountsPerG = 4096;
 constexpr int32_t kDualSenseAccelCountsPerG = 8192;
+constexpr int32_t kSwitchGyroCountsPerDpsMilli = 14247;
+constexpr int32_t kDualSenseGyroCountsPerDps = 1024;
 constexpr uint32_t kSwitchStickAxisMax = 0x0fffu;
 
 constexpr int16_t clamp_i16(int32_t value)
@@ -21,6 +23,12 @@ constexpr int16_t clamp_i16(int32_t value)
 constexpr bool pressed(uint32_t buttons, DualSenseButton button)
 {
     return (buttons & static_cast<uint32_t>(button)) != 0;
+}
+
+constexpr int32_t div_round_nearest(int32_t numerator, int32_t denominator)
+{
+    return numerator >= 0 ? (numerator + denominator / 2) / denominator
+                          : (numerator - denominator / 2) / denominator;
 }
 
 void add_dpad(uint32_t &buttons, DualSenseDpad dpad)
@@ -73,7 +81,10 @@ int16_t dualsense_accel_to_switch(int16_t value)
 
 int16_t dualsense_gyro_to_switch(int16_t value)
 {
-    return value;
+    const int32_t scaled = div_round_nearest(
+        static_cast<int32_t>(value) * kSwitchGyroCountsPerDpsMilli,
+        kDualSenseGyroCountsPerDps * 1000);
+    return clamp_i16(scaled);
 }
 
 SwitchProState map_dualsense_to_switch(const DualSenseInput &input,

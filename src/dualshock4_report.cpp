@@ -78,7 +78,7 @@ bool parse_full_report(const uint8_t *wire, std::size_t size,
 }
 
 bool parse_minimal_report(const uint8_t *wire, std::size_t size,
-                          DualSenseInput &out)
+                           DualSenseInput &out)
 {
     if (size < kDualShock4BtMinimalReportSize || wire[0] != 0x01u) {
         return false;
@@ -93,6 +93,34 @@ bool parse_minimal_report(const uint8_t *wire, std::size_t size,
     parsed.l2 = wire[8];
     parsed.r2 = wire[9];
     parsed.has_imu = false;
+
+    out = parsed;
+    return true;
+}
+
+bool parse_usb_shaped_report(const uint8_t *wire, std::size_t size,
+                             DualSenseInput &out)
+{
+    if (size < 25u || wire[0] != 0x01u) {
+        return false;
+    }
+
+    DualSenseInput parsed{};
+    parsed.left_x = wire[1];
+    parsed.left_y = wire[2];
+    parsed.right_x = wire[3];
+    parsed.right_y = wire[4];
+    parse_common_buttons(parsed, wire + 5);
+    parsed.l2 = wire[8];
+    parsed.r2 = wire[9];
+
+    parsed.gyro_x = read_le_i16(wire + 13);
+    parsed.gyro_y = read_le_i16(wire + 15);
+    parsed.gyro_z = read_le_i16(wire + 17);
+    parsed.accel_x = read_le_i16(wire + 19);
+    parsed.accel_y = read_le_i16(wire + 21);
+    parsed.accel_z = read_le_i16(wire + 23);
+    parsed.has_imu = true;
 
     out = parsed;
     return true;
@@ -118,6 +146,9 @@ bool parse_dualshock4_bt_report(const uint8_t *report, std::size_t size,
     }
 
     if (parse_full_report(wire, wire_size, out)) {
+        return true;
+    }
+    if (parse_usb_shaped_report(wire, wire_size, out)) {
         return true;
     }
     return parse_minimal_report(wire, wire_size, out);

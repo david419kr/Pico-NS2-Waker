@@ -484,6 +484,12 @@ void classify_sdp_pnp_ids(uint16_t attribute_id)
     if (g_sdp_vendor_id == kNintendoVendorId) {
         g_sdp_kind_hint = BtControllerKind::SwitchPro;
     } else if (g_sdp_vendor_id == kSonyVendorId) {
+        // Keep the pre-DS4 behavior as the fallback: Sony HID is DualSense
+        // unless the PnP product ID proves it is a DS4. Some DualSense SDP
+        // replies do not expose the product ID early enough, and leaving the
+        // kind Unknown prevents initial feature/output reports, breaking audio
+        // and rumble.
+        g_sdp_kind_hint = BtControllerKind::DualSense;
         if (g_sdp_product_id == kSonyDualShock4Pid1 ||
             g_sdp_product_id == kSonyDualShock4Pid2) {
             g_sdp_kind_hint = BtControllerKind::DualShock4;
@@ -1022,6 +1028,8 @@ void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type,
                 set_controller_kind(BtControllerKind::DualSense);
             } else if (g_controller_kind_hint == BtControllerKind::DualShock4) {
                 set_controller_kind(BtControllerKind::DualShock4);
+            } else {
+                request_initial_features();
             }
             if (g_local_acl_initiated) {
                 open_next_outgoing_hid_channel();
@@ -1036,6 +1044,8 @@ void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type,
             gap_discoverable_control(false);
             if (g_controller_kind_hint != BtControllerKind::Unknown) {
                 set_controller_kind(g_controller_kind_hint);
+            } else {
+                set_controller_kind(BtControllerKind::DualSense);
             }
             if (g_controller_kind == BtControllerKind::DualSense) {
                 send_initial_output();
