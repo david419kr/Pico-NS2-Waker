@@ -21,6 +21,11 @@ if (-not (Get-Command arm-none-eabi-gcc -ErrorAction SilentlyContinue)) {
     throw "arm-none-eabi-gcc is not on PATH. Run tools\setup-pico-windows.ps1 first."
 }
 
+& (Join-Path $PSScriptRoot 'patch-pico-cyw43-bdaddr.ps1') -PicoSdkPath $env:PICO_SDK_PATH
+if (-not $?) {
+    throw "CYW43 BD_ADDR patch failed."
+}
+
 $FullBuildDir = Join-Path $RepoRoot $BuildDir
 if ($Clean -and (Test-Path $FullBuildDir)) {
     Remove-Item -Recurse -Force $FullBuildDir
