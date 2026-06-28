@@ -12,8 +12,7 @@ Credit: This project is not a fork of [awalol/DS5Dongle](https://github.com/awal
 - Connects to a DualSense, Nintendo Switch Pro Controller 1, or Steam Controller over Bluetooth and appears to the Switch as a `Pro Controller`.
 - Can wake a Nintendo Switch 2 from sleep after a one-time setup.
 - Supports motion controls and rumble.
-- Uses the DualSense 3.5 mm jack as a USB audio output when earphones or a headset are plugged in.
-- Exposes the DualSense microphone as a USB microphone.
+- Includes a DualSense USB audio path for the 3.5 mm jack and microphone. This is currently a known problem and does not work correctly.
 
 ## Requirements
 
@@ -84,6 +83,10 @@ During wake, the Bluetooth controller connection disconnects once. After the Swi
 - Pressing the DualSense microphone mute button mutes the microphone and turns on the DualSense mute LED.
 
 The USB connection may briefly reconnect when the audio device changes. This is normal.
+
+### Known Problem
+
+DualSense USB audio is currently broken after recent controller-support updates. The devices are exposed, but 3.5 mm headset output is mostly silent, with rare short bursts of real audio. The DualSense microphone is also exposed, but currently records only short noise.
 
 ## BOOTSEL Button
 

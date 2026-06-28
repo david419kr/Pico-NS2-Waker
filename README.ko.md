@@ -10,8 +10,7 @@ Credit: 이 프로젝트는 [awalol/DS5Dongle](https://github.com/awalol/DS5Dong
 - DualSense, Nintendo Switch Pro Controller 1, Steam Controller를 Bluetooth로 연결하고, Switch에 `Pro Controller`로 인식시킵니다.
 - 최초 1회 설정 후 Nintendo Switch 2를 슬립 상태에서 깨울 수 있습니다. 
 - 모션 컨트롤과 진동을 지원합니다.
-- DualSense 3.5 mm 단자에 이어폰/헤드셋을 꽂으면 USB 오디오 출력으로 사용할 수 있습니다.
-- DualSense 마이크를 USB 마이크로 사용할 수 있습니다.
+- DualSense 3.5 mm 단자와 마이크용 USB 오디오 경로가 있습니다. 현재는 known problem으로 정상 동작하지 않습니다.
 
 
 ## 준비물
@@ -83,6 +82,10 @@ Switch 2 깨우기를 사용하기 전에 이 항목을 먼저 읽어 주세요.
 - DualSense의 마이크 음소거 버튼을 누르면 마이크가 음소거되고 DualSense의 음소거 LED가 켜집니다.
 
 오디오 장치가 바뀔 때 USB가 잠깐 다시 연결되는 것처럼 보일 수 있습니다. 정상 동작입니다.
+
+### Known problem
+
+DualSense USB 오디오는 최근 컨트롤러 지원을 업데이트하는 과정에서 고장난 상태입니다. 장치는 노출되지만 3.5 mm 헤드셋 출력은 대부분 무음이고, 아주 낮은 확률로 짧게 실제 소리가 들릴 수 있습니다. DualSense 마이크도 노출은 되지만 현재는 짧은 노이즈만 녹음되는 상태입니다.
 
 ## BOOTSEL 버튼
 
