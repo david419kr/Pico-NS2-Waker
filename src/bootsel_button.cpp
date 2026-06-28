@@ -1,5 +1,6 @@
 #include "ds5onswitch/bootsel_button.h"
 
+#include "ds5onswitch/debug_flags.h"
 #include "ds5onswitch/dualsense_bt.h"
 
 #include "btstack_tlv.h"
@@ -179,7 +180,7 @@ void button_dispatch(int clicks)
         reboot_to_app();
     } else if (clicks == 4) {
         reboot_to_bootsel();
-    } else if (clicks == 5) {
+    } else if (clicks == 5 && kEnableBtDebugTools) {
         button_debug_usb_requested = true;
         std::printf("[BTN] BOOTSEL 5 clicks - debug USB\n");
     } else {
@@ -255,6 +256,9 @@ bool __not_in_flash_func(bootsel_button_interaction_active)()
 
 bool __not_in_flash_func(bootsel_button_debug_usb_requested)()
 {
+    if (!kEnableBtDebugTools) {
+        return false;
+    }
     const bool requested = button_debug_usb_requested;
     button_debug_usb_requested = false;
     return requested;

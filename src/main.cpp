@@ -1,6 +1,7 @@
 #include "ds5onswitch/mapper.h"
 #include "ds5onswitch/bootsel_button.h"
 #include "ds5onswitch/bt_debug_log.h"
+#include "ds5onswitch/debug_flags.h"
 #include "ds5onswitch/dualsense_audio.h"
 #include "ds5onswitch/dualsense_bt.h"
 #include "ds5onswitch/dualsense_output.h"
@@ -601,6 +602,9 @@ void __not_in_flash_func(service_usb_reconnect)()
 
 void __not_in_flash_func(service_debug_usb_request)()
 {
+    if (!kEnableBtDebugTools) {
+        return;
+    }
     if (!bootsel_button_debug_usb_requested()) {
         return;
     }
@@ -719,7 +723,7 @@ extern "C" uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id,
     if (buffer == nullptr) {
         return 0;
     }
-    if (report_type == HID_REPORT_TYPE_FEATURE &&
+    if (kEnableBtDebugTools && report_type == HID_REPORT_TYPE_FEATURE &&
         report_id == kDebugLogReadFeatureReportId) {
         std::memset(buffer, 0xff, reqlen);
         const uint16_t out_len = static_cast<uint16_t>(bt_debug_log_read(
@@ -765,7 +769,7 @@ extern "C" void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id,
                                        uint8_t const *buffer, uint16_t bufsize)
 {
     (void)instance;
-    if (report_type == HID_REPORT_TYPE_FEATURE &&
+    if (kEnableBtDebugTools && report_type == HID_REPORT_TYPE_FEATURE &&
         report_id == kDebugLogControlFeatureReportId) {
         if (buffer != nullptr && bufsize >= 4u) {
             g_debug_log_read_offset =

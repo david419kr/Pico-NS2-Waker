@@ -1,5 +1,7 @@
 #include "ds5onswitch/bt_debug_log.h"
 
+#include "ds5onswitch/debug_flags.h"
+
 #include "hardware/flash.h"
 #include "pico/btstack_flash_bank.h"
 #include "pico/flash.h"
@@ -115,6 +117,9 @@ void scan_log()
 
 void bt_debug_log_init()
 {
+    if (!kEnableBtDebugTools) {
+        return;
+    }
     g_enabled = log_region_safe();
     if (!g_enabled) {
         return;
@@ -126,7 +131,7 @@ void bt_debug_log_init()
 void bt_debug_log_event(BtDebugEvent event, uint8_t kind, uint16_t value16,
                         uint32_t value32)
 {
-    if (!g_enabled) {
+    if (!kEnableBtDebugTools || !g_enabled) {
         return;
     }
     if (g_next_entry >= kEntryCount) {
@@ -154,7 +159,7 @@ void bt_debug_log_event(BtDebugEvent event, uint8_t kind, uint16_t value16,
 
 std::size_t bt_debug_log_read(uint32_t offset, uint8_t *out, std::size_t len)
 {
-    if (out == nullptr || offset >= kLogSize) {
+    if (!kEnableBtDebugTools || out == nullptr || offset >= kLogSize) {
         return 0;
     }
     const std::size_t available = kLogSize - offset;
@@ -165,7 +170,7 @@ std::size_t bt_debug_log_read(uint32_t offset, uint8_t *out, std::size_t len)
 
 void bt_debug_log_clear()
 {
-    if (!log_region_safe()) {
+    if (!kEnableBtDebugTools || !log_region_safe()) {
         return;
     }
     g_enabled = true;
