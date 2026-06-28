@@ -85,6 +85,7 @@ BtControllerKind g_controller_kind_hint = BtControllerKind::Unknown;
 bool g_dualsense_init_sent = false;
 bool g_dualsense_features_requested = false;
 bool g_dualshock4_init_sent = false;
+bool g_dualshock4_features_requested = false;
 bool g_switch_pro_init_sent = false;
 bool g_unknown_interrupt_report_logged = false;
 bool g_logged_first_control_data = false;
@@ -269,6 +270,7 @@ void reset_connection_state()
     g_dualsense_init_sent = false;
     g_dualsense_features_requested = false;
     g_dualshock4_init_sent = false;
+    g_dualshock4_features_requested = false;
     g_switch_pro_init_sent = false;
     g_unknown_interrupt_report_logged = false;
     g_logged_first_control_data = false;
@@ -352,6 +354,18 @@ void request_initial_features()
     request_feature(0x05);
 }
 
+void request_dualshock4_features()
+{
+    if (g_hid_control_cid == 0) {
+        return;
+    }
+    if (g_dualshock4_features_requested) {
+        return;
+    }
+    g_dualshock4_features_requested = true;
+    request_feature(0x05);
+}
+
 void send_initial_output()
 {
     if (g_hid_interrupt_cid == 0) {
@@ -431,6 +445,7 @@ void set_controller_kind(BtControllerKind kind)
         request_initial_features();
         send_initial_output();
     } else if (kind == BtControllerKind::DualShock4) {
+        request_dualshock4_features();
         send_dualshock4_initial_output();
     } else if (kind == BtControllerKind::SwitchPro) {
         send_switch_pro_init();
@@ -839,6 +854,7 @@ void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type,
             g_dualsense_init_sent = false;
             g_dualsense_features_requested = false;
             g_dualshock4_init_sent = false;
+            g_dualshock4_features_requested = false;
             g_switch_pro_init_sent = false;
             g_acl_handle =
                 hci_event_connection_complete_get_connection_handle(packet);
@@ -1030,6 +1046,9 @@ void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type,
                 set_controller_kind(BtControllerKind::DualShock4);
             } else {
                 request_initial_features();
+            }
+            if (g_controller_kind == BtControllerKind::DualShock4) {
+                request_dualshock4_features();
             }
             if (g_local_acl_initiated) {
                 open_next_outgoing_hid_channel();
