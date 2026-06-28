@@ -2,6 +2,7 @@
 
 #include "ds5onswitch/bt_debug_log.h"
 #include "ds5onswitch/dualsense_report.h"
+#include "ds5onswitch/steam_hog_bt.h"
 #include "ds5onswitch/switch_identity.h"
 #include "ds5onswitch/switch_usb.h"
 
@@ -1053,6 +1054,7 @@ bool dualsense_bt_init()
     queue_init(&g_send_fifo, sizeof(SendElement), kSendQueueDepth);
 
     l2cap_init();
+    steam_hog_bt_stack_init();
     sdp_init();
     sdp_client_init();
     l2cap_register_service(l2cap_packet_handler, PSM_HID_CONTROL, kMtuControl,

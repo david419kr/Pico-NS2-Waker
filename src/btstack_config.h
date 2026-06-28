@@ -4,8 +4,8 @@
 // Allow a transient second connection: the Switch 2 BLE wake advertiser may
 // accept a short LE connection while the Classic DualSense link is being torn
 // down, so keep one slot of margin beyond the single Classic gamepad link.
-#define MAX_NR_HCI_CONNECTIONS 2
-#define MAX_NR_L2CAP_CHANNELS 4
+#define MAX_NR_HCI_CONNECTIONS 3
+#define MAX_NR_L2CAP_CHANNELS 6
 #define MAX_NR_L2CAP_SERVICES 4
 
 #define HCI_ACL_PAYLOAD_SIZE 1021
@@ -16,13 +16,23 @@
 #define MAX_NR_RFCOMM_SERVICES 0
 #define MAX_NR_RFCOMM_CHANNELS 0
 
-#define NVM_NUM_LINK_KEYS 4
-#define NVM_NUM_DEVICE_DB_ENTRIES 4
+#define NVM_NUM_LINK_KEYS 6
+#define NVM_NUM_DEVICE_DB_ENTRIES 8
 #define HAVE_EMBEDDED_TIME_MS
 
 // LE peripheral role is used only to emit the Switch 2 wake advertisement and
 // to tolerate the brief connection the console opens before terminating it.
 #define ENABLE_LE_PERIPHERAL
+#define ENABLE_LE_CENTRAL
+#define ENABLE_LE_SECURE_CONNECTIONS
+#define ENABLE_MICRO_ECC_FOR_LE_SECURE_CONNECTIONS
+#define ENABLE_GATT_CLIENT
+// Steam Controller protects its HID Report Map behind LE pairing. Let the
+// GATT client retry after SM finishes pairing when it sees insufficient auth.
+#define ENABLE_GATT_CLIENT_PAIRING
+#define MAX_NR_GATT_CLIENTS 1
+#define MAX_NR_HIDS_CLIENTS 1
+#define MAX_NUM_HID_SERVICES 2
 // pico_btstack_ble builds the ATT DB helper even though wake-only advertising
 // does not register GATT services. Keep the static DB tiny but defined.
 #define MAX_ATT_DB_SIZE 16

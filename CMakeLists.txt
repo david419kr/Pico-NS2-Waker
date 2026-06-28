@@ -34,6 +34,7 @@ add_library(ds5onswitch_core
     src/mapper.cpp
     src/persona_combo_filter.cpp
     src/procon2_handshake.cpp
+    src/steam_controller.cpp
     src/switch2_wake.cpp
     src/switch_identity.cpp
     src/switch_pro.cpp
@@ -60,6 +61,7 @@ add_executable(ds5onswitch
     src/dualsense_bt.cpp
     src/main.cpp
     src/ram_mem.c
+    src/steam_hog_bt.cpp
     src/switch2_wake_runtime.cpp
     src/usb_descriptors.cpp
 )

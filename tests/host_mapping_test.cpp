@@ -4,6 +4,7 @@
 #include "ds5onswitch/mapper.h"
 #include "ds5onswitch/persona_combo_filter.h"
 #include "ds5onswitch/procon2_handshake.h"
+#include "ds5onswitch/steam_controller.h"
 #include "ds5onswitch/switch_identity.h"
 #include "ds5onswitch/switch_pro.h"
 #include "ds5onswitch/switch_usb.h"
@@ -239,6 +240,186 @@ void write_i16_le(uint8_t *p, int16_t value)
     const uint16_t raw = static_cast<uint16_t>(value);
     p[0] = static_cast<uint8_t>(raw);
     p[1] = static_cast<uint8_t>(raw >> 8u);
+}
+
+void write_u16_le(uint8_t *p, uint16_t value)
+{
+    p[0] = static_cast<uint8_t>(value);
+    p[1] = static_cast<uint8_t>(value >> 8u);
+}
+
+void write_u32_le(uint8_t *p, uint32_t value)
+{
+    p[0] = static_cast<uint8_t>(value);
+    p[1] = static_cast<uint8_t>(value >> 8u);
+    p[2] = static_cast<uint8_t>(value >> 16u);
+    p[3] = static_cast<uint8_t>(value >> 24u);
+}
+
+void test_steam_controller_input_parser_and_mapping()
+{
+    std::array<uint8_t, kSteamControllerStateReportSize> report{};
+    report[0] = kSteamControllerReportState;
+    report[1] = 0x7a;
+    const uint32_t buttons =
+        kSteamBtnA | kSteamBtnB | kSteamBtnX | kSteamBtnY |
+        kSteamBtnLeftBumper | kSteamBtnRightBumper | kSteamBtnView |
+        kSteamBtnMenu | kSteamBtnLeftStick | kSteamBtnRightStick |
+        kSteamBtnSteam | kSteamBtnRightPadClick | kSteamBtnDpadUp |
+        kSteamBtnDpadRight;
+    write_u32_le(&report[2], buttons);
+    write_u16_le(&report[6], 0x0080);
+    write_u16_le(&report[8], 0xffff);
+    write_i16_le(&report[10], -32768);
+    write_i16_le(&report[12], 0);
+    write_i16_le(&report[14], 32767);
+    write_i16_le(&report[16], -1);
+    write_i16_le(&report[24], 1234);
+    write_i16_le(&report[26], -5678);
+    write_u32_le(&report[30], 0x01020304);
+    write_i16_le(&report[34], -0x0102);
+    write_i16_le(&report[36], 0x0203);
+    write_i16_le(&report[38], -0x3040);
+    write_i16_le(&report[40], 0x1234);
+    write_i16_le(&report[42], -0x0201);
+    write_i16_le(&report[44], 0x3456);
+
+    SteamControllerInput input{};
+    assert(parse_steam_controller_report(report.data(), report.size(), input));
+    assert(input.sequence == 0x7a);
+    assert(input.buttons == buttons);
+    assert(input.left_trigger == 0x0080);
+    assert(input.right_trigger == 0xffff);
+    assert(input.left_stick_x == -32768);
+    assert(input.left_stick_y == 0);
+    assert(input.right_stick_x == 32767);
+    assert(input.right_stick_y == -1);
+    assert(input.right_pad_x == 1234);
+    assert(input.right_pad_y == -5678);
+    assert(input.has_imu);
+
+    const SwitchProState state = map_steam_to_switch(input);
+    assert((state.buttons & kNsB) != 0);
+    assert((state.buttons & kNsA) != 0);
+    assert((state.buttons & kNsY) != 0);
+    assert((state.buttons & kNsX) != 0);
+    assert((state.buttons & kNsL) != 0);
+    assert((state.buttons & kNsR) != 0);
+    assert((state.buttons & kNsMinus) != 0);
+    assert((state.buttons & kNsPlus) != 0);
+    assert((state.buttons & kNsLeftStick) != 0);
+    assert((state.buttons & kNsRightStick) != 0);
+    assert((state.buttons & kNsHome) != 0);
+    assert((state.buttons & kNsCapture) != 0);
+    assert((state.buttons & kNsZL) != 0);
+    assert((state.buttons & kNsZR) != 0);
+    assert((state.buttons & kNsUp) != 0);
+    assert((state.buttons & kNsRight) != 0);
+    assert(state.left_x == 0);
+    assert(state.left_y == 2048);
+    assert(state.right_x == 0x0fff);
+    assert(state.right_y == 2047);
+    assert(state.accel_x == steam_accel_to_switch(input.accel_y));
+    assert(state.accel_y == steam_accel_to_switch(static_cast<int16_t>(-input.accel_x)));
+    assert(state.accel_z == steam_accel_to_switch(input.accel_z));
+    assert(state.gyro_x == input.gyro_y);
+    assert(state.gyro_y == static_cast<int16_t>(-input.gyro_x));
+    assert(state.gyro_z == input.gyro_z);
+
+    std::array<uint8_t, kSteamControllerStateReportSize + 1u> bt_report{};
+    bt_report[0] = 0xa1;
+    bt_report[1] = kSteamControllerReportStateLegacy;
+    std::memcpy(bt_report.data() + 2u, report.data() + 1u, report.size() - 1u);
+    SteamControllerInput legacy{};
+    assert(parse_steam_controller_report(bt_report.data(), bt_report.size(), legacy));
+    assert(legacy.buttons == input.buttons);
+    assert(legacy.gyro_z == input.gyro_z);
+}
+
+void test_steam_persona_combo_filter()
+{
+    PersonaComboFilter filter;
+
+    PersonaComboFilterResult r =
+        filter.process(kSteamBtnSteamMenu, kSteamBtnSteam,
+                       kSteamBtnSteamMenu, 0);
+    assert(r.request == PersonaComboRequest::None);
+    assert((r.buttons & kSteamBtnSteamMenu) != 0);
+
+    filter.reset();
+    (void)filter.process(kSteamBtnSteam, kSteamBtnSteam,
+                         kSteamBtnSteamMenu, 0);
+    r = filter.process(kSteamBtnSteam | kSteamBtnSteamMenu,
+                       kSteamBtnSteam, kSteamBtnSteamMenu, 8);
+    assert(r.request == PersonaComboRequest::None);
+    assert((r.buttons & kSteamBtnSteam) != 0);
+    assert((r.buttons & kSteamBtnSteamMenu) == 0);
+    r = filter.process(0, kSteamBtnSteam, kSteamBtnSteamMenu, 16);
+    assert(r.request == PersonaComboRequest::SwitchPro);
+    assert((r.buttons & kSteamBtnSteam) == 0);
+    assert((r.buttons & kSteamBtnSteamMenu) == 0);
+
+    filter.reset();
+    (void)filter.process(kSteamBtnSteam, kSteamBtnSteam,
+                         kSteamBtnSteamMenu, 0);
+    (void)filter.process(kSteamBtnSteam | kSteamBtnSteamMenu,
+                         kSteamBtnSteam, kSteamBtnSteamMenu, 8);
+    (void)filter.process(kSteamBtnSteam, kSteamBtnSteam,
+                         kSteamBtnSteamMenu, 16);
+    (void)filter.process(kSteamBtnSteam | kSteamBtnSteamMenu,
+                         kSteamBtnSteam, kSteamBtnSteamMenu, 24);
+    (void)filter.process(kSteamBtnSteam, kSteamBtnSteam,
+                         kSteamBtnSteamMenu, 32);
+    r = filter.process(0, kSteamBtnSteam, kSteamBtnSteamMenu, 40);
+    assert(r.request == PersonaComboRequest::Switch2Pro);
+}
+
+void test_steam_output_builders()
+{
+    std::array<uint8_t, 64> buf{};
+    const std::size_t clear_len =
+        build_steam_feature_command(kSteamCmdClearDigitalMappings, nullptr, 0,
+                                    buf.data(), buf.size());
+    assert(clear_len == 64u);
+    assert(buf[0] == kSteamFeatureReportCommand);
+    assert(buf[1] == kSteamCmdClearDigitalMappings);
+    assert(buf[2] == 0);
+
+    const std::size_t settings_len =
+        build_steam_settings_feature_command(buf.data(), buf.size());
+    assert(settings_len == 64u);
+    assert(buf[0] == kSteamFeatureReportCommand);
+    assert(buf[1] == kSteamCmdSetSettings);
+    assert(buf[2] == 9u);
+    assert(buf[3] == kSteamSettingImuMode);
+    assert(buf[4] == 0x18u);
+    assert(buf[5] == 0x00u);
+
+    DualSenseHapticCommand haptics{};
+    haptics.left_motor = 3;
+    haptics.right_motor = 4;
+    std::array<uint8_t, 10> out{};
+    const std::size_t rumble_len =
+        build_steam_body_rumble_output(haptics, out.data(), out.size());
+    assert(rumble_len == 10u);
+    assert(out[0] == kSteamOutHapticRumble);
+    assert(out[4] == 0x03u && out[5] == 0x03u);
+    assert(out[7] == 0x04u && out[8] == 0x04u);
+
+    const std::size_t pulse_len =
+        build_steam_trackpad_pulse_output(kSteamTrackpadHapticRight, 1200, 0,
+                                          1, 2, out.data(), out.size());
+    assert(pulse_len == 10u);
+    assert(out[0] == kSteamOutHapticPulse);
+    assert(out[1] == kSteamTrackpadHapticRight);
+    assert(out[2] == 0xb0u && out[3] == 0x04u);
+
+    std::array<uint8_t, 5> power{};
+    const std::size_t power_len =
+        build_steam_power_off_output(power.data(), power.size());
+    assert(power_len == 5u);
+    assert(power[0] == kSteamOutPowerOff);
+    assert(std::memcmp(power.data() + 1u, "off!", 4) == 0);
 }
 
 void test_dualsense_bt_input_parser()
@@ -801,6 +982,9 @@ int main()
     test_axis_and_motion_mapping();
     test_nrf5340_steam_motion_axis_parity();
     test_haptics();
+    test_steam_controller_input_parser_and_mapping();
+    test_steam_persona_combo_filter();
+    test_steam_output_builders();
     test_dualsense_bt_input_parser();
     test_dualsense_bt_output_report();
     test_switch_usb_reports();

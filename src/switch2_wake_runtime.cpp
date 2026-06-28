@@ -1,6 +1,7 @@
 #include "ds5onswitch/switch2_wake_runtime.h"
 
 #include "ds5onswitch/dualsense_bt.h"
+#include "ds5onswitch/steam_hog_bt.h"
 #include "ds5onswitch/switch2_wake.h"
 
 #include "bsp/board_api.h"
@@ -130,6 +131,7 @@ void finish_attempt(bool apply_cooldown)
 {
     stop_advertising();
     dualsense_bt_resume_after_switch2_wake();
+    steam_hog_bt_resume_after_switch2_wake();
     const uint32_t now = board_millis();
     if (apply_cooldown) {
         g_state = WakeState::Cooldown;
@@ -233,6 +235,7 @@ bool switch2_wake_request()
 
     std::printf("[S2WK] Wake requested\n");
     dualsense_bt_pause_for_switch2_wake();
+    steam_hog_bt_pause_for_switch2_wake();
     disconnect_classic_controller_for_wake();
     start_advertising();
     return true;
