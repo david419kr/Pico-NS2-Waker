@@ -46,6 +46,9 @@ bool g_auto_wake_armed = false;
 uint32_t g_ds_connected_since_ms = 0;
 bool g_switch2_registration_active = false;
 bool g_switch2_registration_complete = false;
+bool g_switch2_registration_attempted = false;
+bool g_switch2_registration_pending = false;
+uint32_t g_switch2_registration_pending_at_ms = 0;
 uint32_t g_switch2_registration_started_ms = 0;
 uint8_t g_switch2_report_counter = 0;
 
@@ -159,6 +162,11 @@ void request_usb_reconnect(uint32_t delay_ms = 250u)
 
 void start_switch2_registration_persona()
 {
+    if (g_switch2_registration_active || g_switch2_registration_attempted) {
+        return;
+    }
+    g_switch2_registration_attempted = true;
+    g_switch2_registration_pending = false;
     g_switch2_registration_active = true;
     g_switch2_registration_complete = false;
     g_switch2_registration_started_ms = board_millis();
@@ -167,6 +175,16 @@ void start_switch2_registration_persona()
         UsbControllerPersona::Switch2ProRegistration);
     usb_descriptors_set_audio_persona(UsbAudioPersona::HidOnly);
     request_usb_reconnect();
+}
+
+void schedule_switch2_registration_persona(uint32_t delay_ms = 250u)
+{
+    if (g_switch2_registration_active || g_switch2_registration_attempted ||
+        g_switch2_registration_pending) {
+        return;
+    }
+    g_switch2_registration_pending = true;
+    g_switch2_registration_pending_at_ms = board_millis() + delay_ms;
 }
 
 void finish_switch2_registration_persona()
@@ -182,6 +200,22 @@ void finish_switch2_registration_persona()
         : UsbAudioPersona::HidOnly;
     usb_descriptors_set_audio_persona(g_usb_persona);
     request_usb_reconnect();
+}
+
+void __not_in_flash_func(service_switch2_registration_trigger)()
+{
+    if (!g_switch2_registration_pending) {
+        return;
+    }
+    if (!dualsense_bt_is_connected()) {
+        g_switch2_registration_pending = false;
+        return;
+    }
+    const uint32_t now = board_millis();
+    if (static_cast<int32_t>(now - g_switch2_registration_pending_at_ms) < 0) {
+        return;
+    }
+    start_switch2_registration_persona();
 }
 
 void push_pending(const SwitchReport &report)
@@ -295,6 +329,8 @@ void __not_in_flash_func(service_dualsense_connection)()
         g_usb_reconnect_pending = false;
         g_switch2_registration_active = false;
         g_switch2_registration_complete = false;
+        g_switch2_registration_attempted = false;
+        g_switch2_registration_pending = false;
         usb_descriptors_set_controller_persona(UsbControllerPersona::SwitchPro);
         g_usb_persona = UsbAudioPersona::HidOnly;
         usb_descriptors_set_audio_persona(g_usb_persona);
@@ -306,7 +342,8 @@ void __not_in_flash_func(service_dualsense_connection)()
         return;
     }
 
-    start_switch2_registration_persona();
+    g_switch2_registration_attempted = false;
+    g_switch2_registration_pending = false;
     g_auto_wake_armed = true;
     g_ds_connected_since_ms = board_millis();
 }
@@ -534,6 +571,7 @@ void __no_inline_not_in_flash_func(app_loop)()
         tud_task();
         service_usb_mount_tracking();
         service_dualsense_connection();
+        service_switch2_registration_trigger();
         service_switch2_wake_policy();
         dualsense_audio_loop(g_ds_output, g_ds_output_sequence);
         service_dualsense_output();
@@ -670,6 +708,7 @@ extern "C" void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id,
     if (result.has_switch2_console_addr) {
         switch2_wake_set_target_from_usb_pairing(
             result.switch2_console_addr_wire);
+        schedule_switch2_registration_persona();
     }
     apply_switch_feedback(result.feedback);
     if (result.has_reply) {
