@@ -11,10 +11,12 @@ namespace {
 
 enum {
     kItfHid = 0,
+    kItfSwitch2Vendor = 1,
     kItfAudioControl = 1,
     kItfAudioSpeaker = 2,
     kItfAudioMicHeadset = 3,
     kItfTotalHidOnly = 1,
+    kItfTotalSwitch2Registration = 2,
     kItfTotalMicOnly = 3,
     kItfTotalHeadset = 4,
 };
@@ -26,6 +28,7 @@ enum {
 };
 
 constexpr uint8_t kEndpointHid = 0x01;
+constexpr uint8_t kEndpointSwitch2Vendor = 0x02;
 constexpr uint8_t kEndpointAudioOut = 0x02;
 constexpr uint8_t kEndpointAudioIn = 0x83;
 
@@ -33,11 +36,14 @@ constexpr uint16_t kAudioOutPacketSize = 196;
 constexpr uint16_t kAudioInPacketSize = 196;
 constexpr uint16_t kConfigLenHidOnly =
     TUD_CONFIG_DESC_LEN + TUD_HID_INOUT_DESC_LEN;
+constexpr uint16_t kConfigLenSwitch2Registration =
+    TUD_CONFIG_DESC_LEN + TUD_HID_INOUT_DESC_LEN + TUD_VENDOR_DESC_LEN;
 constexpr uint16_t kConfigLenMicOnly =
     TUD_CONFIG_DESC_LEN + TUD_HID_INOUT_DESC_LEN + 101;
 constexpr uint16_t kConfigLenHeadset =
     TUD_CONFIG_DESC_LEN + TUD_HID_INOUT_DESC_LEN + 185;
 
+UsbControllerPersona g_controller_persona = UsbControllerPersona::SwitchPro;
 UsbAudioPersona g_audio_persona = UsbAudioPersona::HidOnly;
 
 uint8_t const kSwitchProHidReportDescriptor[] = {
@@ -56,7 +62,22 @@ uint8_t const kSwitchProHidReportDescriptor[] = {
     0x85,0x82,0x09,0x06,0x75,0x08,0x95,0x3f,0x91,0x83,0xc0,
 };
 
-tusb_desc_device_t const kDeviceDescriptor = {
+uint8_t const kSwitch2ProHidReportDescriptor[] = {
+    // Switch 2 Pro Controller HID descriptor captured from a real ProCon2 USB
+    // enumeration and mirrored by the local nRF5340 reference.  The Switch 2
+    // registration path needs report 0x09 streaming plus report 0x02 output.
+    0x05,0x01,0x09,0x05,0xa1,0x01,0x85,0x05,0x05,0xff,0x09,0x01,
+    0x15,0x00,0x26,0xff,0x00,0x95,0x3f,0x75,0x08,0x81,0x02,
+    0x85,0x09,0x09,0x01,0x95,0x02,0x81,0x02,0x05,0x09,0x19,0x01,
+    0x29,0x15,0x25,0x01,0x95,0x15,0x75,0x01,0x81,0x02,0x95,0x01,
+    0x75,0x03,0x81,0x03,0x05,0x01,0x09,0x01,0xa1,0x00,0x09,0x30,
+    0x09,0x31,0x09,0x33,0x09,0x35,0x26,0xff,0x0f,0x95,0x04,0x75,
+    0x0c,0x81,0x02,0xc0,0x05,0xff,0x09,0x02,0x26,0xff,0x00,0x95,
+    0x34,0x75,0x08,0x81,0x02,0x85,0x02,0x09,0x01,0x95,0x3f,0x91,
+    0x02,0xc0,
+};
+
+tusb_desc_device_t const kSwitchProDeviceDescriptor = {
     .bLength = sizeof(tusb_desc_device_t),
     .bDescriptorType = TUSB_DESC_DEVICE,
     .bcdUSB = 0x0200,
@@ -73,12 +94,40 @@ tusb_desc_device_t const kDeviceDescriptor = {
     .bNumConfigurations = 0x01,
 };
 
+tusb_desc_device_t const kSwitch2ProDeviceDescriptor = {
+    .bLength = sizeof(tusb_desc_device_t),
+    .bDescriptorType = TUSB_DESC_DEVICE,
+    .bcdUSB = 0x0200,
+    .bDeviceClass = 0xef,
+    .bDeviceSubClass = 0x02,
+    .bDeviceProtocol = 0x01,
+    .bMaxPacketSize0 = CFG_TUD_ENDPOINT0_SIZE,
+    .idVendor = 0x057e,
+    .idProduct = 0x2069,
+    .bcdDevice = 0x0001,
+    .iManufacturer = kStrManufacturer,
+    .iProduct = kStrProduct,
+    .iSerialNumber = 0x03,
+    .bNumConfigurations = 0x01,
+};
+
 uint8_t const kHidOnlyConfigurationDescriptor[] = {
     TUD_CONFIG_DESCRIPTOR(1, kItfTotalHidOnly, 0, kConfigLenHidOnly,
                           TUSB_DESC_CONFIG_ATT_SELF_POWERED, 500),
     TUD_HID_INOUT_DESCRIPTOR(kItfHid, 0, HID_ITF_PROTOCOL_NONE,
                              sizeof(kSwitchProHidReportDescriptor),
                              kEndpointHid, 0x80 | kEndpointHid, 64, 8),
+};
+
+uint8_t const kSwitch2RegistrationConfigurationDescriptor[] = {
+    TUD_CONFIG_DESCRIPTOR(1, kItfTotalSwitch2Registration, 0,
+                          kConfigLenSwitch2Registration,
+                          TUSB_DESC_CONFIG_ATT_SELF_POWERED, 500),
+    TUD_HID_INOUT_DESCRIPTOR(kItfHid, 0, HID_ITF_PROTOCOL_NONE,
+                             sizeof(kSwitch2ProHidReportDescriptor),
+                             kEndpointHid, 0x80 | kEndpointHid, 64, 4),
+    TUD_VENDOR_DESCRIPTOR(kItfSwitch2Vendor, 0, kEndpointSwitch2Vendor,
+                          0x80 | kEndpointSwitch2Vendor, 64),
 };
 
 uint8_t const kMicOnlyConfigurationDescriptor[] = {
@@ -213,18 +262,37 @@ uint8_t const kHeadsetConfigurationDescriptor[] = {
 };
 
 static_assert(sizeof(kHidOnlyConfigurationDescriptor) == kConfigLenHidOnly);
+static_assert(sizeof(kSwitch2RegistrationConfigurationDescriptor) ==
+              kConfigLenSwitch2Registration);
 static_assert(sizeof(kMicOnlyConfigurationDescriptor) == kConfigLenMicOnly);
 static_assert(sizeof(kHeadsetConfigurationDescriptor) == kConfigLenHeadset);
 
-char const *const kStringDescriptor[] = {
+char const *const kSwitchProStringDescriptor[] = {
     "",
     "Nintendo Co., Ltd.",
     "Pro Controller",
 };
 
+char const *const kSwitch2ProStringDescriptor[] = {
+    "",
+    "Nintendo",
+    "Switch 2 Pro Controller",
+    "HEK10000220896",
+};
+
 uint16_t g_string_descriptor[32 + 1];
 
 } // namespace
+
+void usb_descriptors_set_controller_persona(UsbControllerPersona persona)
+{
+    g_controller_persona = persona;
+}
+
+UsbControllerPersona usb_descriptors_controller_persona()
+{
+    return g_controller_persona;
+}
 
 void usb_descriptors_set_audio_persona(UsbAudioPersona persona)
 {
@@ -240,13 +308,23 @@ UsbAudioPersona usb_descriptors_audio_persona()
 
 extern "C" uint8_t const *tud_descriptor_device_cb()
 {
-    return reinterpret_cast<uint8_t const *>(&ds5onswitch::kDeviceDescriptor);
+    if (ds5onswitch::usb_descriptors_controller_persona() ==
+        ds5onswitch::UsbControllerPersona::Switch2ProRegistration) {
+        return reinterpret_cast<uint8_t const *>(
+            &ds5onswitch::kSwitch2ProDeviceDescriptor);
+    }
+    return reinterpret_cast<uint8_t const *>(
+        &ds5onswitch::kSwitchProDeviceDescriptor);
 }
 
 extern "C" uint8_t const *tud_descriptor_configuration_cb(uint8_t index)
 {
     (void)index;
     using ds5onswitch::UsbAudioPersona;
+    if (ds5onswitch::usb_descriptors_controller_persona() ==
+        ds5onswitch::UsbControllerPersona::Switch2ProRegistration) {
+        return ds5onswitch::kSwitch2RegistrationConfigurationDescriptor;
+    }
     switch (ds5onswitch::usb_descriptors_audio_persona()) {
     case UsbAudioPersona::MicOnly:
         return ds5onswitch::kMicOnlyConfigurationDescriptor;
@@ -261,6 +339,10 @@ extern "C" uint8_t const *tud_descriptor_configuration_cb(uint8_t index)
 extern "C" uint8_t const *tud_hid_descriptor_report_cb(uint8_t instance)
 {
     (void)instance;
+    if (ds5onswitch::usb_descriptors_controller_persona() ==
+        ds5onswitch::UsbControllerPersona::Switch2ProRegistration) {
+        return ds5onswitch::kSwitch2ProHidReportDescriptor;
+    }
     return ds5onswitch::kSwitchProHidReportDescriptor;
 }
 
@@ -273,11 +355,21 @@ extern "C" uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t lang
         ds5onswitch::g_string_descriptor[1] = 0x0409;
         chr_count = 1;
     } else {
-        if (index >= sizeof(ds5onswitch::kStringDescriptor) /
-                         sizeof(ds5onswitch::kStringDescriptor[0])) {
+        const bool switch2 =
+            ds5onswitch::usb_descriptors_controller_persona() ==
+            ds5onswitch::UsbControllerPersona::Switch2ProRegistration;
+        char const *const *strings = switch2
+            ? ds5onswitch::kSwitch2ProStringDescriptor
+            : ds5onswitch::kSwitchProStringDescriptor;
+        const std::size_t string_count = switch2
+            ? sizeof(ds5onswitch::kSwitch2ProStringDescriptor) /
+                  sizeof(ds5onswitch::kSwitch2ProStringDescriptor[0])
+            : sizeof(ds5onswitch::kSwitchProStringDescriptor) /
+                  sizeof(ds5onswitch::kSwitchProStringDescriptor[0]);
+        if (index >= string_count) {
             return nullptr;
         }
-        const char *str = ds5onswitch::kStringDescriptor[index];
+        const char *str = strings[index];
         chr_count = std::strlen(str);
         const std::size_t max_count =
             sizeof(ds5onswitch::g_string_descriptor) /

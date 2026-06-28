@@ -4,7 +4,9 @@
 #include "ds5onswitch/dualsense_bt.h"
 #include "ds5onswitch/dualsense_output.h"
 #include "ds5onswitch/dualsense_report.h"
+#include "ds5onswitch/procon2_handshake.h"
 #include "ds5onswitch/switch_identity.h"
+#include "ds5onswitch/switch_pro.h"
 #include "ds5onswitch/switch_usb.h"
 #include "ds5onswitch/switch2_wake_runtime.h"
 #include "ds5onswitch/usb_descriptors.h"
@@ -42,9 +44,14 @@ bool g_home_wake_pending = false;
 uint32_t g_home_wake_pending_ms = 0;
 bool g_auto_wake_armed = false;
 uint32_t g_ds_connected_since_ms = 0;
+bool g_switch2_registration_active = false;
+bool g_switch2_registration_complete = false;
+uint32_t g_switch2_registration_started_ms = 0;
+uint8_t g_switch2_report_counter = 0;
 
 constexpr uint32_t kUsbUnmountDebounceMs = 1000;
 constexpr uint32_t kHomeWakePendingWindowMs = 3000;
+constexpr uint32_t kSwitch2RegistrationWindowMs = 10000;
 
 void configure_switch_identity_from_radio()
 {
@@ -59,6 +66,18 @@ void configure_switch_identity_from_radio()
     // anomalous Joy-Con address.
     SwitchControllerBdAddr identity{};
     std::memcpy(identity.data(), cyw43_state.mac, identity.size());
+    bool any_nonzero = false;
+    bool any_not_ff = false;
+    for (uint8_t b : identity) {
+        any_nonzero = any_nonzero || b != 0x00u;
+        any_not_ff = any_not_ff || b != 0xffu;
+    }
+    if (!any_nonzero || !any_not_ff) {
+        // cyw43_state.mac is still zero before HCI reaches WORKING on some
+        // boots. Do not turn that into 00:00:00:00:00:01; dualsense_bt.cpp
+        // will set the identity from BTstack's real local BD_ADDR later.
+        return;
+    }
     if (identity[5] == 0xffu) {
         // Avoid wrapping the last byte into 0x00 (unusable address). Fall back
         // to the captured Pro Controller identity in that rare case.
@@ -67,6 +86,102 @@ void configure_switch_identity_from_radio()
     }
     ++identity[5];
     switch_identity_set_bd_addr(identity);
+}
+
+void controller_addr_wire(uint8_t out[6])
+{
+    const SwitchControllerBdAddr &bd_addr = switch_identity_bd_addr();
+    for (std::size_t i = 0; i < bd_addr.size(); ++i) {
+        out[i] = bd_addr[bd_addr.size() - 1u - i];
+    }
+}
+
+bool valid_addr_wire(const uint8_t addr[6])
+{
+    if (addr == nullptr) {
+        return false;
+    }
+    bool any_nonzero = false;
+    bool any_not_ff = false;
+    for (std::size_t i = 0; i < 6u; ++i) {
+        any_nonzero = any_nonzero || addr[i] != 0x00u;
+        any_not_ff = any_not_ff || addr[i] != 0xffu;
+    }
+    return any_nonzero && any_not_ff;
+}
+
+bool procon2_extract_console_addr_wire(const uint8_t *request,
+                                       std::size_t size,
+                                       uint8_t out_addr_wire[6])
+{
+    if (request == nullptr || out_addr_wire == nullptr || size < 16u) {
+        return false;
+    }
+    // Captured 0x03 bulk request:
+    //   03 91 00 0d 00 08 00 00 01 00 <console addr wire[6]>
+    if (request[0] != kProcon2ReportMac ||
+        request[1] != kProcon2DirHostRequest) {
+        return false;
+    }
+    if (!valid_addr_wire(&request[10])) {
+        return false;
+    }
+    std::memcpy(out_addr_wire, &request[10], 6);
+    return true;
+}
+
+SwitchReport build_switch2_registration_input_report()
+{
+    SwitchReport out{};
+    const SwitchProState &state = g_switch_usb.state();
+    uint8_t buttons[3]{};
+    switch_pro_button_bytes(state.buttons, buttons);
+
+    out[0] = 0x09u;
+    out[1] = g_switch2_report_counter++;
+    out[2] = 0x23u; // USB power/full battery, as in nRF5340 Switch2 persona.
+    std::memcpy(&out[3], buttons, sizeof(buttons));
+    pack_switch_stick12(&out[6], state.left_x, state.left_y);
+    pack_switch_stick12(&out[9], state.right_x, state.right_y);
+    out[12] = state.has_imu ? 0x38u : 0x30u;
+    if (state.has_imu) {
+        out[15] = 30u;
+    }
+    return out;
+}
+
+void request_usb_reconnect(uint32_t delay_ms = 250u)
+{
+    tud_disconnect();
+    g_usb_reconnect_pending = true;
+    g_usb_reconnect_at_ms = board_millis() + delay_ms;
+}
+
+void start_switch2_registration_persona()
+{
+    g_switch2_registration_active = true;
+    g_switch2_registration_complete = false;
+    g_switch2_registration_started_ms = board_millis();
+    g_switch2_report_counter = 0;
+    usb_descriptors_set_controller_persona(
+        UsbControllerPersona::Switch2ProRegistration);
+    usb_descriptors_set_audio_persona(UsbAudioPersona::HidOnly);
+    request_usb_reconnect();
+}
+
+void finish_switch2_registration_persona()
+{
+    if (!g_switch2_registration_active &&
+        usb_descriptors_controller_persona() == UsbControllerPersona::SwitchPro) {
+        return;
+    }
+    g_switch2_registration_active = false;
+    usb_descriptors_set_controller_persona(UsbControllerPersona::SwitchPro);
+    g_usb_persona = dualsense_bt_is_connected()
+        ? dualsense_audio_desired_persona()
+        : UsbAudioPersona::HidOnly;
+    usb_descriptors_set_audio_persona(g_usb_persona);
+    request_usb_reconnect();
 }
 
 void push_pending(const SwitchReport &report)
@@ -132,12 +247,12 @@ void __not_in_flash_func(on_dualsense_bt_data)(DualSenseBtChannel channel,
     g_ds_mute_button_down = mute_button_down;
 
     dualsense_audio_update_status(input);
-    if (dualsense_audio_desired_persona() != g_usb_persona) {
+    if (!g_switch2_registration_active &&
+        usb_descriptors_controller_persona() == UsbControllerPersona::SwitchPro &&
+        dualsense_audio_desired_persona() != g_usb_persona) {
         g_usb_persona = dualsense_audio_desired_persona();
         usb_descriptors_set_audio_persona(g_usb_persona);
-        tud_disconnect();
-        g_usb_reconnect_pending = true;
-        g_usb_reconnect_at_ms = board_millis() + 250u;
+        request_usb_reconnect();
     }
 
     g_switch_usb.set_state(map_dualsense_to_switch(input));
@@ -178,6 +293,9 @@ void __not_in_flash_func(service_dualsense_connection)()
         g_last_ds_buttons = 0;
         g_auto_wake_armed = false;
         g_usb_reconnect_pending = false;
+        g_switch2_registration_active = false;
+        g_switch2_registration_complete = false;
+        usb_descriptors_set_controller_persona(UsbControllerPersona::SwitchPro);
         g_usb_persona = UsbAudioPersona::HidOnly;
         usb_descriptors_set_audio_persona(g_usb_persona);
         tud_disconnect();
@@ -188,11 +306,7 @@ void __not_in_flash_func(service_dualsense_connection)()
         return;
     }
 
-    g_usb_persona = dualsense_audio_desired_persona();
-    usb_descriptors_set_audio_persona(g_usb_persona);
-    tud_disconnect();
-    g_usb_reconnect_pending = true;
-    g_usb_reconnect_at_ms = board_millis() + 250u;
+    start_switch2_registration_persona();
     g_auto_wake_armed = true;
     g_ds_connected_since_ms = board_millis();
 }
@@ -283,6 +397,49 @@ void __not_in_flash_func(service_dualsense_output)()
     }
 }
 
+void __not_in_flash_func(service_switch2_registration)()
+{
+    if (usb_descriptors_controller_persona() !=
+        UsbControllerPersona::Switch2ProRegistration) {
+        return;
+    }
+
+    const uint32_t now = board_millis();
+    uint8_t request[64]{};
+    while (tud_vendor_available() > 0) {
+        const uint32_t n = tud_vendor_read(request, sizeof(request));
+        if (n == 0) {
+            break;
+        }
+
+        uint8_t console_addr[6]{};
+        if (procon2_extract_console_addr_wire(request, n, console_addr)) {
+            switch2_wake_set_target_from_usb_pairing(console_addr);
+        }
+
+        uint8_t ctrl_addr_wire[6]{};
+        controller_addr_wire(ctrl_addr_wire);
+        const Procon2Reply reply =
+            procon2_build_reply(request, n, ctrl_addr_wire);
+        if (reply.valid) {
+            (void)tud_vendor_write(reply.data.data(),
+                                   static_cast<uint32_t>(reply.len));
+            (void)tud_vendor_flush();
+            if (request[0] == kProcon2ReportPairing &&
+                request[3] == 0x03u) {
+                g_switch2_registration_complete = true;
+            }
+        }
+    }
+
+    if (g_switch2_registration_active &&
+        (g_switch2_registration_complete ||
+         now - g_switch2_registration_started_ms >=
+             kSwitch2RegistrationWindowMs)) {
+        finish_switch2_registration_persona();
+    }
+}
+
 void __not_in_flash_func(service_usb_reports)()
 {
     static uint32_t last_input_ms = 0;
@@ -302,7 +459,12 @@ void __not_in_flash_func(service_usb_reports)()
     }
 
     last_input_ms = now;
-    send_report(g_switch_usb.build_input_report());
+    if (usb_descriptors_controller_persona() ==
+        UsbControllerPersona::Switch2ProRegistration) {
+        send_report(build_switch2_registration_input_report());
+    } else {
+        send_report(g_switch_usb.build_input_report());
+    }
 }
 
 void __not_in_flash_func(service_usb_reconnect)()
@@ -375,6 +537,7 @@ void __no_inline_not_in_flash_func(app_loop)()
         service_switch2_wake_policy();
         dualsense_audio_loop(g_ds_output, g_ds_output_sequence);
         service_dualsense_output();
+        service_switch2_registration();
         service_usb_reports();
         service_usb_reconnect();
         dualsense_bt_persist_blacklist_if_dirty();
@@ -402,6 +565,7 @@ int main()
     cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, false);
 
     g_ds_output.reset();
+    usb_descriptors_set_controller_persona(UsbControllerPersona::SwitchPro);
     usb_descriptors_set_audio_persona(UsbAudioPersona::HidOnly);
     dualsense_audio_init();
     switch2_wake_init();
@@ -430,7 +594,13 @@ extern "C" uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id,
 
     SwitchReport report{};
     bool ok = false;
-    if (report_id == kSwitchProFullInputReportId || report_id == 0) {
+    if (usb_descriptors_controller_persona() ==
+        UsbControllerPersona::Switch2ProRegistration) {
+        if (report_id == 0 || report_id == 0x09u || report_id == 0x05u) {
+            report = build_switch2_registration_input_report();
+            ok = true;
+        }
+    } else if (report_id == kSwitchProFullInputReportId || report_id == 0) {
         report = g_switch_usb.build_input_report();
         ok = true;
     } else if (report_id == kSwitchProUsbResponseReportId) {
@@ -470,6 +640,29 @@ extern "C" void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id,
     } else {
         size = std::min<std::size_t>(bufsize, report.size());
         std::memcpy(report.data(), buffer, size);
+    }
+
+    if (usb_descriptors_controller_persona() ==
+        UsbControllerPersona::Switch2ProRegistration) {
+        uint8_t console_addr[6]{};
+        if (procon2_extract_console_addr_wire(report.data(), size,
+                                              console_addr)) {
+            switch2_wake_set_target_from_usb_pairing(console_addr);
+        }
+        uint8_t ctrl_addr_wire[6]{};
+        controller_addr_wire(ctrl_addr_wire);
+        const Procon2Reply reply =
+            procon2_build_reply(report.data(), size, ctrl_addr_wire);
+        if (reply.valid) {
+            SwitchReport hid_reply{};
+            std::copy(reply.data.begin(), reply.data.begin() + reply.len,
+                      hid_reply.begin());
+            push_pending(hid_reply);
+            if (report[0] == kProcon2ReportPairing && report[3] == 0x03u) {
+                g_switch2_registration_complete = true;
+            }
+        }
+        return;
     }
 
     const SwitchUsbOutputResult result =

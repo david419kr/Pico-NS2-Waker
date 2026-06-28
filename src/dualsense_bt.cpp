@@ -230,6 +230,13 @@ void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type,
     switch (event_type) {
     case BTSTACK_EVENT_STATE:
         if (btstack_event_state_get_state(packet) == HCI_STATE_WORKING) {
+            bd_addr_t local_addr{};
+            gap_local_bd_addr(local_addr);
+            SwitchControllerBdAddr identity{};
+            std::memcpy(identity.data(), local_addr, identity.size());
+            switch_identity_set_bd_addr(identity);
+            std::printf("[BT] Local controller addr %s\n",
+                        bd_addr_to_str(local_addr));
             blacklist_load();
             std::printf("[BT] Stack ready, start inquiry\n");
             maybe_start_inquiry();
