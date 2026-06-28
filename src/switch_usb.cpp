@@ -216,12 +216,12 @@ std::size_t manual_pairing_payload(const uint8_t *args, std::size_t args_size,
 
     const uint8_t request = args != nullptr && args_size >= 1 ? args[0] : 0;
     std::memset(out, 0, out_size);
+    const SwitchControllerBdAddr &bd_addr = switch_identity_bd_addr();
     switch (request) {
     case 0x01:
         out[0] = 0x01;
-        for (std::size_t i = 0; i < kSwitchProControllerBdAddr.size(); ++i) {
-            out[1u + i] =
-                kSwitchProControllerBdAddr[kSwitchProControllerBdAddr.size() - 1u - i];
+        for (std::size_t i = 0; i < bd_addr.size(); ++i) {
+            out[1u + i] = bd_addr[bd_addr.size() - 1u - i];
         }
         out[8] = 0x25;
         out[9] = 0x08;
@@ -324,9 +324,9 @@ bool SwitchUsbEmulator::build_usb_response(uint8_t command, SwitchReport &out) c
         // Real Switch Pro USB connection-status replies carry the controller
         // Bluetooth address in HID wire order (little-endian BD_ADDR), while
         // the device-info subcommand carries it in display/public order.
-        for (std::size_t i = 0; i < kSwitchProControllerBdAddr.size(); ++i) {
-            out[4u + i] =
-                kSwitchProControllerBdAddr[kSwitchProControllerBdAddr.size() - 1u - i];
+        const SwitchControllerBdAddr &bd_addr = switch_identity_bd_addr();
+        for (std::size_t i = 0; i < bd_addr.size(); ++i) {
+            out[4u + i] = bd_addr[bd_addr.size() - 1u - i];
         }
     }
     return true;
@@ -348,8 +348,8 @@ bool SwitchUsbEmulator::build_subcommand_reply(uint8_t subcommand,
     {
         static const uint8_t prefix[] = {0x03, 0x48, 0x03, 0x02};
         std::memcpy(payload, prefix, sizeof(prefix));
-        std::memcpy(payload + sizeof(prefix), kSwitchProControllerBdAddr.data(),
-                    kSwitchProControllerBdAddr.size());
+        const SwitchControllerBdAddr &bd_addr = switch_identity_bd_addr();
+        std::memcpy(payload + sizeof(prefix), bd_addr.data(), bd_addr.size());
         payload[10] = 0x01;
         payload[11] = 0x03;
         payload_len = 12;

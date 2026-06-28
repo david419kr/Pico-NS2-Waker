@@ -33,6 +33,7 @@ add_library(ds5onswitch_core
     src/haptics.cpp
     src/mapper.cpp
     src/switch2_wake.cpp
+    src/switch_identity.cpp
     src/switch_pro.cpp
     src/switch_usb.cpp
 )

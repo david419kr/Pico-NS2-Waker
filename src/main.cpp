@@ -46,14 +46,27 @@ uint32_t g_ds_connected_since_ms = 0;
 constexpr uint32_t kUsbUnmountDebounceMs = 1000;
 constexpr uint32_t kHomeWakePendingWindowMs = 3000;
 
-void configure_cyw43_base_mac_for_bt_identity()
+void configure_switch_identity_from_radio()
 {
-    static_assert(kSwitchProControllerBdAddr[5] != 0x00,
-                  "CYW43 BT transport derives BT address as mac[5] + 1");
-
-    std::memcpy(cyw43_state.mac, kSwitchProControllerBdAddr.data(),
-                kSwitchProControllerBdAddr.size());
-    --cyw43_state.mac[5];
+    // The CYW43 BTstack transport sets the controller's public Bluetooth
+    // address to (Wi-Fi MAC + 1) on the last byte (see the SDK's
+    // btstack_hci_transport_cyw43.c, restored to stock by
+    // tools/patch-pico-cyw43-bdaddr.ps1). Mirror that here so the USB Switch Pro
+    // persona reports the controller's *real* radio address. Keeping the
+    // reported identity equal to the radio address is what allows a
+    // general-purpose Switch 2 wake (the console can register this controller's
+    // own address into its BLE wake whitelist), instead of borrowing a hardcoded
+    // anomalous Joy-Con address.
+    SwitchControllerBdAddr identity{};
+    std::memcpy(identity.data(), cyw43_state.mac, identity.size());
+    if (identity[5] == 0xffu) {
+        // Avoid wrapping the last byte into 0x00 (unusable address). Fall back
+        // to the captured Pro Controller identity in that rare case.
+        switch_identity_set_bd_addr(kSwitchProControllerBdAddrFallback);
+        return;
+    }
+    ++identity[5];
+    switch_identity_set_bd_addr(identity);
 }
 
 void push_pending(const SwitchReport &report)
@@ -385,7 +398,7 @@ int main()
     if (cyw43_arch_init() != 0) {
         return 1;
     }
-    configure_cyw43_base_mac_for_bt_identity();
+    configure_switch_identity_from_radio();
     cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, false);
 
     g_ds_output.reset();

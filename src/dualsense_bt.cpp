@@ -508,11 +508,11 @@ bool dualsense_bt_init()
     g_hci_callback.callback = &hci_packet_handler;
     hci_add_event_handler(&g_hci_callback);
 
-    bd_addr_t switch_identity{};
-    std::memcpy(switch_identity, kSwitchProControllerBdAddr.data(),
-                kSwitchProControllerBdAddr.size());
-    hci_set_bd_addr(switch_identity);
-
+    // Do not override the controller's Bluetooth address here. The Pico keeps
+    // its own factory-derived public address (CYW43 Wi-Fi MAC + 1, set by the
+    // SDK CYW43 BTstack transport). The USB Switch Pro persona reports this same
+    // address (see configure_switch_identity_from_radio() in main.cpp), so the
+    // identity advertised to the Switch 2 and the real radio address match.
     return hci_power_control(HCI_POWER_ON) == 0;
 }
 
