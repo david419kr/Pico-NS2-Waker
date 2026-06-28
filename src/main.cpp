@@ -142,18 +142,20 @@ SwitchReport build_switch2_registration_input_report()
     SwitchReport out{};
     const SwitchProState &state = g_switch_usb.state();
     uint8_t buttons[3]{};
-    switch_pro_button_bytes(state.buttons, buttons);
+    // Switch 2 Pro report 0x09 uses the verbatim button bit layout, not the
+    // Switch Pro 1 (0x30) remap. Using the wrong packer made every button wrong
+    // in Switch 2 persona, so the console saw no usable input.
+    switch2_pro_button_bytes(state.buttons, buttons);
 
     out[0] = 0x09u;
     out[1] = g_switch2_report_counter++;
-    out[2] = 0x23u; // USB power/full battery, as in nRF5340 Switch2 persona.
+    out[2] = 0x23u; // SC_SWITCH2_POWER_USB_FULL (USB powered / full battery).
     std::memcpy(&out[3], buttons, sizeof(buttons));
     pack_switch_stick12(&out[6], state.left_x, state.left_y);
     pack_switch_stick12(&out[9], state.right_x, state.right_y);
-    out[12] = state.has_imu ? 0x38u : 0x30u;
-    if (state.has_imu) {
-        out[15] = 30u;
-    }
+    // Switch 2 registration is button/stick/trigger only: no IMU or rumble
+    // feature lane is advertised, so byte 12 stays at the no-motion marker.
+    out[12] = 0x30u;
     return out;
 }
 
@@ -189,6 +191,7 @@ void select_switch2_pro_persona()
         return;
     }
     g_switch2_report_counter = 0;
+    procon2_handshake_reset();
     usb_descriptors_set_controller_persona(
         UsbControllerPersona::Switch2ProRegistration);
     g_usb_persona = UsbAudioPersona::HidOnly;
@@ -717,7 +720,12 @@ extern "C" void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id,
             procon2_build_reply(report.data(), size, ctrl_addr_wire);
         if (reply.valid) {
             SwitchReport hid_reply{};
-            std::copy(reply.data.begin(), reply.data.begin() + reply.len,
+            // HID output reports cap at the 64-byte SwitchReport. The few
+            // larger ProCon2 replies (SPI flash reads) only arrive over the
+            // vendor bulk path, so clamping here is safe.
+            const std::size_t copy_len =
+                std::min<std::size_t>(reply.len, hid_reply.size());
+            std::copy(reply.data.begin(), reply.data.begin() + copy_len,
                       hid_reply.begin());
             push_pending(hid_reply);
         }

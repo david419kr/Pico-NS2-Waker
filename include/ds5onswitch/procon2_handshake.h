@@ -33,7 +33,9 @@ constexpr uint8_t kProcon2ReportInit = 0x16;       // init exchange
 constexpr uint8_t kProcon2DirHostRequest = 0x91;   // host -> device
 constexpr uint8_t kProcon2DirDeviceReply = 0x01;   // device -> host
 
-constexpr std::size_t kProcon2ReplyMaxLen = 64;
+// The largest device->host reply is an SPI flash read (cmd 0x02): an 8-byte
+// header + 8-byte address block + up to 0x40 bytes of flash = 0x50 bytes.
+constexpr std::size_t kProcon2ReplyMaxLen = 0x50;
 
 struct Procon2Reply {
     bool valid = false;
@@ -55,5 +57,9 @@ Procon2Reply procon2_build_reply(const uint8_t *request, std::size_t size,
 
 // True if the report is a host->device ProCon2 control request we model.
 bool procon2_is_handshake_request(const uint8_t *data, std::size_t size);
+
+// Reset ProCon2 handshake session state (pairing LTK, negotiated features,
+// active report id). Call when a fresh Switch 2 registration persona starts.
+void procon2_handshake_reset();
 
 } // namespace ds5onswitch

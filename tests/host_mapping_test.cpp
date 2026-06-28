@@ -559,6 +559,99 @@ void test_procon2_handshake_replies()
     assert(std::memcmp(&confirm_reply.data[9], expected_b2, sizeof(expected_b2)) == 0);
 }
 
+void test_switch2_pro_button_bytes()
+{
+    // Switch 2 Pro report 0x09 packs the kNs* bitfield verbatim into 3 bytes.
+    uint8_t out[3];
+    switch2_pro_button_bytes(kNsB | kNsA | kNsY | kNsX | kNsR | kNsZR, out);
+    assert(out[0] == 0x3fu); // bits 0..5 set
+    assert(out[1] == 0x00u);
+    assert(out[2] == 0x00u);
+
+    switch2_pro_button_bytes(kNsPlus | kNsMinus | kNsLeftStick | kNsRightStick,
+                             out);
+    // bit6 Plus, bit7 RightStick, bit14 Minus, bit15 LeftStick.
+    assert(out[0] == 0xc0u);
+    assert(out[1] == 0xc0u);
+    assert(out[2] == 0x00u);
+
+    switch2_pro_button_bytes(kNsHome | kNsCapture | kNsDown | kNsUp | kNsLeft |
+                                 kNsRight | kNsL | kNsZL,
+                             out);
+    // byte2 holds bits 16..20: Home(16), Capture(17), Down(8)->byte2? no.
+    // Down=bit8 -> byte1 bit0; Up=bit11 -> byte1 bit3; etc. Verify by formula.
+    uint32_t b = kNsHome | kNsCapture | kNsDown | kNsUp | kNsLeft | kNsRight |
+                 kNsL | kNsZL;
+    assert(out[0] == (uint8_t)(b & 0xffu));
+    assert(out[1] == (uint8_t)((b >> 8) & 0xffu));
+    assert(out[2] == (uint8_t)((b >> 16) & 0x1fu));
+}
+
+void test_procon2_extended_handshake()
+{
+    const uint8_t ctrl_addr_wire[] = {0x56, 0x34, 0x12, 0x67, 0xcf, 0x2c};
+    procon2_handshake_reset();
+
+    // 0x0c/0x01 feature info reflects the requested feature flags byte.
+    // Request button+stick only (0x03): IMU/rumble lanes stay zero.
+    const uint8_t feat_req[] = {0x0c, 0x91, 0x00, 0x01, 0x00, 0x01,
+                                0x00, 0x00, 0x03};
+    Procon2Reply feat =
+        procon2_build_reply(feat_req, sizeof(feat_req), ctrl_addr_wire);
+    assert(feat.valid);
+    assert(feat.len == 20u);
+    assert(feat.data[0] == 0x0cu && feat.data[1] == 0x01u);
+    assert(feat.data[12] == 0x07u); // buttons
+    assert(feat.data[13] == 0x07u); // sticks
+    assert(feat.data[14] == 0x00u); // no IMU
+    assert(feat.data[17] == 0x00u); // no rumble
+
+    // 0x02/0x01 SPI read of device-info block 0x13000 -> 0x50-byte reply.
+    const uint8_t spi_req[] = {0x02, 0x91, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+                               0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0x01, 0x00};
+    Procon2Reply spi =
+        procon2_build_reply(spi_req, sizeof(spi_req), ctrl_addr_wire);
+    assert(spi.valid);
+    assert(spi.len == 0x50u);
+    assert(spi.data[0] == 0x02u);
+    // Block 0x13000 starts with 0x01 0x00 then the "HEK..." serial.
+    assert(spi.data[16] == 0x01u);
+    assert(std::memcmp(&spi.data[18], "HEK", 3) == 0);
+
+    // 0x10/0x01 firmware info -> 20-byte reply.
+    const uint8_t fw_req[] = {0x10, 0x91, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00};
+    Procon2Reply fw =
+        procon2_build_reply(fw_req, sizeof(fw_req), ctrl_addr_wire);
+    assert(fw.valid);
+    assert(fw.len == 20u);
+    assert(fw.data[8] == 0x02u);
+
+    // 0x16/0x01 init exchange -> 32-byte reply.
+    const uint8_t init_req[] = {0x16, 0x91, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00};
+    Procon2Reply init =
+        procon2_build_reply(init_req, sizeof(init_req), ctrl_addr_wire);
+    assert(init.valid);
+    assert(init.len == 32u);
+
+    // 0x07/0x01 matches the genuine 9-byte ack (header + one zero byte).
+    const uint8_t cmd07_req[] = {0x07, 0x91, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00};
+    Procon2Reply cmd07 =
+        procon2_build_reply(cmd07_req, sizeof(cmd07_req), ctrl_addr_wire);
+    assert(cmd07.valid);
+    assert(cmd07.len == 9u);
+    assert(cmd07.data[1] == 0x01u);
+    assert(cmd07.data[8] == 0x00u);
+
+    // A host-directed command with no modelled body still gets a header-only
+    // ack (e.g. 0x09/0x07 in the genuine capture is 8 bytes).
+    const uint8_t ack_req[] = {0x09, 0x91, 0x00, 0x07, 0x00, 0x00, 0x00, 0x00};
+    Procon2Reply ack =
+        procon2_build_reply(ack_req, sizeof(ack_req), ctrl_addr_wire);
+    assert(ack.valid);
+    assert(ack.len == 8u);
+    assert(ack.data[1] == 0x01u);
+}
+
 } // namespace
 
 int main()
@@ -571,6 +664,8 @@ int main()
     test_dualsense_bt_output_report();
     test_switch_usb_reports();
     test_switch2_wake_adv_builder();
+    test_switch2_pro_button_bytes();
+    test_procon2_extended_handshake();
     test_switch_identity_runtime();
     test_procon2_handshake_replies();
     return 0;

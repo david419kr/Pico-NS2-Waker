@@ -86,6 +86,16 @@ void switch_pro_button_bytes(uint32_t buttons, uint8_t out[3])
     }
 }
 
+void switch2_pro_button_bytes(uint32_t buttons, uint8_t out[3])
+{
+    // Switch 2 Pro (report 0x09) carries the Nintendo button bitfield verbatim.
+    // The kNs* enum is laid out to match the on-wire ordering, so a straight
+    // bit copy is correct (mirrors nRF5340 switch2_pro_button_bytes()).
+    out[0] = static_cast<uint8_t>(buttons & 0xffu);
+    out[1] = static_cast<uint8_t>((buttons >> 8) & 0xffu);
+    out[2] = static_cast<uint8_t>((buttons >> 16) & 0x1fu);
+}
+
 SwitchProInputReport build_switch_pro_input_report(const SwitchProState &state,
                                                    uint8_t packet_timer,
                                                    bool vibration_enabled)

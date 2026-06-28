@@ -23,6 +23,21 @@ constexpr uint8_t kReplyAck = 0xf8;
 constexpr uint8_t kPayloadRequestMarker = 0x00;
 constexpr uint8_t kPayloadReplyMarker = 0x01;
 
+// Negotiable controller feature flags (mirrors nRF5340 SC_SWITCH2_FEATURE_*).
+constexpr uint8_t kFeatureButtons = 0x01u;
+constexpr uint8_t kFeatureSticks = 0x02u;
+constexpr uint8_t kFeatureImu = 0x04u;
+constexpr uint8_t kFeatureMouse = 0x10u;
+constexpr uint8_t kFeatureRumble = 0x20u;
+// We register as a button/stick/trigger only controller: no IMU/rumble lanes.
+constexpr uint8_t kFeaturesDefault =
+    static_cast<uint8_t>(kFeatureButtons | kFeatureSticks);
+
+constexpr uint8_t kCommandAck1 = 0x78u;
+constexpr uint16_t kBatteryVolts = 3800u;
+constexpr uint8_t kReportCommon = 0x05u;
+constexpr uint8_t kReportPro = 0x09u;
+
 constexpr uint8_t kProcon2FixedB1Wire[16] = {
     0x5c, 0xf6, 0xee, 0x79, 0x2c, 0xdf, 0x05, 0xe1,
     0xba, 0x2b, 0x63, 0x25, 0xc4, 0x1a, 0x5f, 0x10,
@@ -30,6 +45,9 @@ constexpr uint8_t kProcon2FixedB1Wire[16] = {
 
 uint8_t g_ltk_wire[16]{};
 bool g_ltk_ready = false;
+uint8_t g_feature_flags = kFeaturesDefault;
+uint8_t g_feature_mask = 0u;
+uint8_t g_active_report_id = kReportCommon;
 
 void write_header(Procon2Reply &reply, const uint8_t *request)
 {
@@ -198,6 +216,143 @@ bool has_payload(const uint8_t *request, std::size_t size, std::size_t payload_l
     return request != nullptr && size >= kHeaderLen + payload_len;
 }
 
+void put_u16le(uint8_t *p, uint16_t value)
+{
+    p[0] = static_cast<uint8_t>(value & 0xffu);
+    p[1] = static_cast<uint8_t>((value >> 8) & 0xffu);
+}
+
+void put_u32le(uint8_t *p, uint32_t value)
+{
+    p[0] = static_cast<uint8_t>(value & 0xffu);
+    p[1] = static_cast<uint8_t>((value >> 8) & 0xffu);
+    p[2] = static_cast<uint8_t>((value >> 16) & 0xffu);
+    p[3] = static_cast<uint8_t>((value >> 24) & 0xffu);
+}
+
+uint32_t get_u32le(const uint8_t *p)
+{
+    return static_cast<uint32_t>(p[0]) |
+           (static_cast<uint32_t>(p[1]) << 8) |
+           (static_cast<uint32_t>(p[2]) << 16) |
+           (static_cast<uint32_t>(p[3]) << 24);
+}
+
+uint8_t masked_features(uint8_t flags)
+{
+    return g_feature_mask == 0u ? flags
+                                : static_cast<uint8_t>(flags & g_feature_mask);
+}
+
+void feature_info(uint8_t flags, uint8_t out[8])
+{
+    std::memset(out, 0, 8u);
+    if ((flags & kFeatureButtons) != 0u) {
+        out[0] = 0x07u;
+    }
+    if ((flags & kFeatureSticks) != 0u) {
+        out[1] = 0x07u;
+    }
+    if ((flags & kFeatureImu) != 0u) {
+        out[2] = 0x01u;
+    }
+    if ((flags & kFeatureMouse) != 0u) {
+        out[4] = 0x01u;
+    }
+    if ((flags & kFeatureRumble) != 0u) {
+        out[5] = 0x03u;
+    }
+}
+
+// Minimal SPI-flash image the Switch 2 reads during ProCon2 registration.
+// Only the blocks the console actually requests need real content; everything
+// else returns 0xff (erased flash), as captured from a genuine ProCon2.
+void minimal_flash_block(uint32_t address, uint8_t out[0x40])
+{
+    std::memset(out, 0, 0x40u);
+    switch (address) {
+    case 0x13000u: {
+        std::memset(out, 0xff, 0x40u);
+        out[0] = 0x01u;
+        out[1] = 0x00u;
+        static const char serial[] = "HEK10000220896";
+        std::memcpy(&out[2], serial, 14u);
+        static const uint8_t info[] = {
+            0x7e, 0x05, 0x69, 0x20, 0x01, 0x06, 0x01, 0x23, 0x23, 0x23,
+            0xa0, 0xa0, 0xa0, 0xe6, 0xe6, 0xe6, 0x32, 0x32, 0x32,
+        };
+        std::memcpy(&out[0x12], info, sizeof(info));
+        break;
+    }
+    case 0x13040u: {
+        static const uint8_t key_like[16] = {
+            0x8c, 0xce, 0xda, 0x41, 0x5e, 0xff, 0x4a, 0x3b,
+            0xa9, 0x91, 0xde, 0x3b, 0x62, 0x57, 0x0a, 0xbb,
+        };
+        std::memset(out, 0xff, 0x40u);
+        std::memcpy(out, key_like, sizeof(key_like));
+        break;
+    }
+    case 0x13080u:
+    case 0x130c0u: {
+        static const uint8_t prefix[0x28] = {
+            0x01, 0xad, 0xd9, 0x9a, 0x55, 0x56, 0x65, 0xa0,
+            0x00, 0x0a, 0xa0, 0x00, 0x0a, 0xe2, 0x20, 0x0e,
+            0xe2, 0x20, 0x0e, 0x9a, 0xad, 0xd9, 0x9a, 0xad,
+            0xd9, 0x0a, 0xa5, 0x50, 0x0a, 0xa5, 0x50, 0x2f,
+            0xf6, 0x62, 0x2f, 0xf6, 0x62, 0x0a, 0xff, 0xff,
+        };
+        static const uint8_t primary_cal[9] = {
+            0xaa, 0x27, 0x82, 0x6a, 0x96, 0x5f, 0x33, 0x66, 0x62,
+        };
+        static const uint8_t secondary_cal[9] = {
+            0x4e, 0x98, 0x84, 0xee, 0xa5, 0x65, 0x4c, 0x06, 0x64,
+        };
+        std::memset(out, 0xff, 0x40u);
+        std::memcpy(out, prefix, sizeof(prefix));
+        std::memcpy(&out[0x28],
+                    address == 0x13080u ? primary_cal : secondary_cal, 9u);
+        break;
+    }
+    case 0x13100u: {
+        static const uint8_t data[0x18] = {
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0xd5, 0x30, 0xa3, 0xb9,
+            0x96, 0x95, 0xdc, 0x3d, 0x59, 0x3b, 0x1d, 0x41,
+        };
+        std::memcpy(out, data, sizeof(data));
+        break;
+    }
+    case 0x13e00u: {
+        static const char serial[] = "17152528LD1743101";
+        std::memcpy(out, serial, 17u);
+        static const uint8_t tail20[] = {0x01, 0x02, 0x02, 0x02};
+        std::memcpy(&out[0x20], tail20, sizeof(tail20));
+        static const uint8_t tail30[] = {
+            0x03, 0x02, 0x04, 0x01, 0x05, 0x02, 0x06, 0x02, 0x07, 0x02,
+        };
+        std::memcpy(&out[0x30], tail30, sizeof(tail30));
+        break;
+    }
+    case 0x1fb000u: {
+        static const uint8_t data[] = {
+            0x02, 0x00, 0x02, 0x00, 0x01, 0x00, 0x11, 0x03,
+        };
+        std::memset(out, 0xff, 0x40u);
+        std::memcpy(out, data, sizeof(data));
+        break;
+    }
+    case 0x13060u:
+    case 0x1fc000u:
+    case 0x1fc040u:
+    case 0x1fc080u:
+        std::memset(out, 0xff, 0x40u);
+        break;
+    default:
+        break;
+    }
+}
+
 } // namespace
 
 bool procon2_is_handshake_request(const uint8_t *data, std::size_t size)
@@ -205,11 +360,21 @@ bool procon2_is_handshake_request(const uint8_t *data, std::size_t size)
     if (data == nullptr || size < kHeaderLen) {
         return false;
     }
-    if (data[1] != kProcon2DirHostRequest) {
-        return false;
-    }
-    return data[0] == kProcon2ReportMac || data[0] == kProcon2ReportPairing ||
-           data[0] == kProcon2ReportInit;
+    // Any host->device control request (direction 0x91) is part of the ProCon2
+    // bulk handshake. The real Switch 2 issues ~21 distinct command/subcommand
+    // pairs during registration (cmd 0x01,0x02,0x03,0x07,0x09,0x0a,0x0b,0x0c,
+    // 0x10,0x11,0x15,0x16,0x18); answering only a subset makes the console give
+    // up before pairing completes.
+    return data[1] == kProcon2DirHostRequest;
+}
+
+void procon2_handshake_reset()
+{
+    std::memset(g_ltk_wire, 0, sizeof(g_ltk_wire));
+    g_ltk_ready = false;
+    g_feature_flags = kFeaturesDefault;
+    g_feature_mask = 0u;
+    g_active_report_id = kReportCommon;
 }
 
 Procon2Reply procon2_build_reply(const uint8_t *request, std::size_t size,
@@ -220,83 +385,268 @@ Procon2Reply procon2_build_reply(const uint8_t *request, std::size_t size,
         return reply;
     }
 
-    const uint8_t report_id = request[0];
-    const uint8_t subcommand = request[3];
+    const uint8_t cmd = request[0];
+    const uint8_t sub = request[3];
+    uint8_t *out = reply.data.data();
+    std::size_t response_len = kHeaderLen;
 
+    // Default device->host header: cmd, dir=0x01, transport, sub, 0x00, 0xf8.
     write_header(reply, request);
+    reply.valid = true;
 
-    switch (report_id) {
-    case kProcon2ReportMac:
-        // frame 309/333: console announces its MAC, controller acks with zeros.
-        reply.data[8] = kPayloadReplyMarker;
-        reply.data[9] = 0x00u;
-        reply.data[10] = 0x00u;
-        reply.data[11] = 0x00u;
-        reply.len = 12;
-        reply.valid = true;
-        return reply;
-
-    case kProcon2ReportInit:
-        // frame 439/444: init exchange. Controller reply carried no extra body
-        // beyond the header in the capture.
-        reply.len = 32u;
-        reply.valid = true;
-        return reply;
-
-    case kProcon2ReportPairing:
-        reply.data[8] = kPayloadReplyMarker;
-        if (subcommand == 0x01u) {
-            // frame 603/614: business-card exchange. The console sent both its
-            // own and the controller's MAC. The controller reply observed was
-            // "0401 c53382bfefe0" (6 bytes after a 2-byte tag). We echo the
-            // controller's own wire-order address as the business card; the
-            // exact tag semantics are unverified.
-            reply.data[9] = 0x04u;
-            reply.data[10] = 0x01u;
-            if (controller_addr_wire != nullptr) {
-                std::memcpy(&reply.data[11], controller_addr_wire, 6);
-            }
-            reply.len = 17;
-            reply.valid = true;
-            return reply;
+    switch (cmd) {
+    case 0x01u:
+        if (sub == 0x0cu) {
+            static const uint8_t payload[] = {0x61u, 0x12u, 0x50u, 0x10u};
+            std::memcpy(&out[8], payload, sizeof(payload));
+            response_len = 8u + sizeof(payload);
         }
-        if (subcommand == 0x04u) {
-            // Exchange LTK components. Host request payload[1..16] is A1 in
-            // wire order; controller response payload[1..16] is fixed B1.
+        break;
+
+    case 0x02u:
+        // SPI flash access (calibration / device info reads).
+        if (sub == 0x01u && size >= 16u) {
+            const uint32_t address = get_u32le(&request[12]);
+            uint8_t flash[0x40];
+            out[8] = 0x40u;
+            put_u32le(&out[12], address);
+            minimal_flash_block(address, flash);
+            std::memcpy(&out[16], flash, sizeof(flash));
+            response_len = 0x50u;
+        } else if (sub == 0x02u && size >= 16u) {
+            std::memcpy(&out[8], &request[8], 8u);
+            response_len = 16u;
+        } else if (sub == 0x03u && size >= 16u) {
+            out[4] = 0x00u;
+            out[5] = kCommandAck1;
+            std::memcpy(&out[8], &request[8], 4u);
+            response_len = 12u;
+        } else if (sub == 0x04u && size >= 16u) {
+            uint32_t read_size = request[8];
+            const uint32_t address = get_u32le(&request[12]);
+            const uint32_t offset = address & 0x3fu;
+            uint8_t flash[0x40];
+            if (read_size > 0x40u) {
+                read_size = 0x40u;
+            }
+            const uint32_t copy_len =
+                read_size < (0x40u - offset) ? read_size : (0x40u - offset);
+            put_u32le(&out[8], read_size);
+            put_u32le(&out[12], address);
+            minimal_flash_block(address & ~0x3fu, flash);
+            std::memcpy(&out[16], &flash[offset], copy_len);
+            response_len = 16u + read_size;
+        } else if (sub == 0x05u && size >= 16u) {
+            std::memcpy(&out[8], &request[8], 8u);
+            response_len = 16u;
+        }
+        break;
+
+    case 0x03u:
+        switch (sub) {
+        case 0x01u:
+        case 0x02u:
+        case 0x08u:
+        case 0x09u:
+        case 0x0cu:
+            break; // header-only ack
+        case 0x03u:
+            out[8] = size >= 9u ? request[8] : 0x01u;
+            response_len = 12u;
+            break;
+        case 0x0au:
+            // Select active input report id (0x05 common / 0x09 pro).
+            if (size >= 9u &&
+                (request[8] == kReportCommon || request[8] == kReportPro)) {
+                g_active_report_id = request[8];
+            }
+            break;
+        case 0x0du:
+            out[8] = 0x01u;
+            response_len = 12u;
+            break;
+        case 0x0fu:
+            out[8] = 0x05u;
+            response_len = 12u;
+            break;
+        default:
+            break;
+        }
+        break;
+
+    case 0x07u:
+        // 0x07/0x01: header + single zero payload byte (9-byte reply), matching
+        // the genuine ProCon2 capture.
+        if (sub == 0x01u) {
+            out[8] = 0x00u;
+            response_len = 9u;
+        }
+        break;
+
+    case 0x09u:
+    case 0x0au:
+        break; // header-only ack
+
+    case 0x0bu:
+        switch (sub) {
+        case 0x03u:
+            put_u16le(&out[8], kBatteryVolts);
+            response_len = 12u;
+            break;
+        case 0x04u:
+            out[8] = 0x34u;
+            out[10] = 0x83u;
+            response_len = 12u;
+            break;
+        case 0x06u:
+            out[8] = 0x11u;
+            response_len = 12u;
+            break;
+        default:
+            break;
+        }
+        break;
+
+    case 0x0cu: {
+        // Feature negotiation. We only ever advertise button/stick support.
+        uint8_t flags = size >= 9u ? request[8] : 0u;
+        switch (sub) {
+        case 0x01u: {
+            uint8_t info[8];
+            feature_info(flags, info);
+            std::memcpy(&out[12], info, sizeof(info));
+            response_len = 20u;
+            break;
+        }
+        case 0x02u:
+            g_feature_mask = flags;
+            response_len = 12u;
+            break;
+        case 0x03u:
+            g_feature_mask = 0u;
+            g_feature_flags = 0u;
+            response_len = 12u;
+            break;
+        case 0x04u:
+            flags = masked_features(flags);
+            g_feature_flags = static_cast<uint8_t>(g_feature_flags | flags);
+            response_len = 12u;
+            break;
+        case 0x05u:
+            flags = masked_features(flags);
+            g_feature_flags =
+                static_cast<uint8_t>(g_feature_flags & ~flags);
+            response_len = 12u;
+            break;
+        case 0x06u:
+            put_u32le(&out[12], 0x02u);
+            out[16] = 0x00u;
+            out[17] = 0x50u;
+            response_len = 48u;
+            break;
+        default:
+            response_len = 12u;
+            break;
+        }
+        break;
+    }
+
+    case 0x10u:
+        if (sub == 0x01u) {
+            static const uint8_t firmware_info[] = {
+                0x02u, 0x01u, 0x04u, 0x02u, 0x0cu, 0x00u,
+                0x00u, 0x00u, 0x00u, 0x02u, 0x03u, 0x00u,
+            };
+            std::memcpy(&out[8], firmware_info, sizeof(firmware_info));
+            response_len = 8u + sizeof(firmware_info);
+        }
+        break;
+
+    case 0x11u:
+        if (sub == 0x01u) {
+            static const uint8_t payload[] = {0x03u, 0x00u, 0x00u, 0x00u};
+            std::memcpy(&out[8], payload, sizeof(payload));
+            response_len = 8u + sizeof(payload);
+        } else if (sub == 0x03u) {
+            static const uint8_t payload[] = {
+                0x01u, 0xc0u, 0x03u, 0x00u, 0x00u, 0xe7u, 0xd0u, 0x1cu,
+                0x3bu, 0x79u, 0x22u, 0xa0u, 0x3au, 0x0au, 0xe8u, 0x9cu,
+                0x42u, 0x58u, 0xa0u, 0x0bu, 0x42u, 0x0au, 0xe8u, 0x9cu,
+                0x41u, 0x58u, 0xa0u, 0x0bu, 0x41u,
+            };
+            std::memcpy(&out[8], payload, sizeof(payload));
+            response_len = 8u + sizeof(payload);
+        }
+        break;
+
+    case kProcon2ReportPairing: // 0x15: business-card + RE-based crypto.
+        out[8] = kPayloadReplyMarker;
+        switch (sub) {
+        case 0x01u:
+            // Business-card exchange: embed the controller's own wire-order
+            // BD_ADDR so the console whitelists this controller for BLE wake.
+            out[9] = 0x04u;
+            out[10] = 0x01u;
+            if (controller_addr_wire != nullptr) {
+                std::memcpy(&out[11], controller_addr_wire, 6);
+            }
+            response_len = 17u;
+            break;
+        case 0x04u:
+            // Exchange LTK components: request payload is A1, reply is fixed B1.
+            //   LTK = A1 XOR B1   (ndeadly/switch2_controller_research)
             if (has_payload(request, size, 17u) &&
                 request[8] == kPayloadRequestMarker) {
                 compute_ltk_from_a1_wire(&request[9]);
             }
-            std::memcpy(&reply.data[9], kProcon2FixedB1Wire,
+            std::memcpy(&out[9], kProcon2FixedB1Wire,
                         sizeof(kProcon2FixedB1Wire));
-            reply.len = 25;
-            reply.valid = true;
-            return reply;
-        }
-        if (subcommand == 0x02u) {
-            // Confirm LTK. Host request payload[1..16] is A2 in wire order.
-            // Public RE formula:
-            //   B2 = AES-128-ECB(reverse(A2), key=reverse(A1 XOR B1))
-            // The AES output is written directly as the wire-order B2.
+            response_len = 25u;
+            break;
+        case 0x02u:
+            // Confirm LTK: B2 = AES-128-ECB(reverse(A2), key=reverse(LTK)).
             if (g_ltk_ready && has_payload(request, size, 17u) &&
                 request[8] == kPayloadRequestMarker) {
-                compute_b2_wire(&request[9], &reply.data[9]);
+                compute_b2_wire(&request[9], &out[9]);
             } else {
-                std::memset(&reply.data[9], 0x00u, 16u);
+                std::memset(&out[9], 0x00u, 16u);
                 reply.is_crypto_placeholder = true;
             }
-            reply.len = 25;
-            reply.valid = true;
-            return reply;
+            response_len = 25u;
+            break;
+        case 0x03u:
+            // Finalise pairing: header + reply marker only.
+            response_len = 9u;
+            break;
+        default:
+            response_len = 9u;
+            break;
         }
-        // subcommand 0x03 (and others): terminal/ack marker with empty body.
-        reply.len = 9u;
-        reply.valid = true;
-        return reply;
+        break;
+
+    case kProcon2ReportInit: // 0x16: init exchange, zero-padded 32-byte reply.
+        if (sub == 0x01u) {
+            response_len = 32u;
+        }
+        break;
+
+    case 0x18u:
+        if (sub == 0x01u) {
+            static const uint8_t payload[] = {
+                0x00u, 0x00u, 0x40u, 0xf0u, 0x00u, 0x00u, 0x60u, 0x00u,
+            };
+            std::memcpy(&out[8], payload, sizeof(payload));
+            response_len = 8u + sizeof(payload);
+        }
+        break;
 
     default:
-        return reply;
+        // Unknown command: acknowledge with a header-only reply.
+        break;
     }
+
+    reply.len = response_len;
+    return reply;
 }
 
 } // namespace ds5onswitch
