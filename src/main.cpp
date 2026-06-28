@@ -746,3 +746,82 @@ extern "C" void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id,
         push_pending(g_switch_usb.build_input_report());
     }
 }
+
+// Switch 2 Pro enumeration-time vendor control requests.
+//
+// A real Switch 2 console, after SET_CONFIGURATION, issues vendor control
+// requests *to the device* before it will talk to the bulk endpoint:
+//   * 0xC0 / bRequest 0x03 (wValue 0, wIndex 0) -> 64-byte device-info block
+//     (serial + VID/PID + colour data)
+//   * 0xC0 / bRequest 0x02 (wValue 0, wIndex 0) -> 16-byte block whose tail is
+//     the controller's BD_ADDR
+//   * 0x40 / bRequest 0x04 (wValue 0x0276, wLength 0) -> zero-length ACK
+// This is captured in BLE-captures/procon2-usb-handshake.pcapng (frames 107,
+// 111, 128, 137, 155) and matches the working nRF5340 reference
+// (sc_switch2_vendor_to_host / sc_switch2_vendor_to_dev in app/src/sc_usb.c).
+//
+// TinyUSB routes *every* vendor-type control request to this callback (see
+// process_control_request() in usbd.c). Without it the requests NAK then STALL,
+// and the console aborts enumeration -> the ProCon2 persona is never
+// recognised, which is exactly what BLE-captures/pro2-persona-notworking.pcapng
+// shows (the host loops on 0xC0/0x03 forever).
+extern "C" bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage,
+                                           tusb_control_request_t const *request)
+{
+    if (request == nullptr) {
+        return false;
+    }
+    if (usb_descriptors_controller_persona() !=
+        UsbControllerPersona::Switch2ProRegistration) {
+        return false;
+    }
+    if (stage != CONTROL_STAGE_SETUP) {
+        // Data / ACK stages need no further action.
+        return true;
+    }
+    if (request->bmRequestType_bit.type != TUSB_REQ_TYPE_VENDOR ||
+        request->bmRequestType_bit.recipient != TUSB_REQ_RCPT_DEVICE) {
+        return false;
+    }
+
+    if (request->bmRequestType_bit.direction == TUSB_DIR_IN) {
+        if (request->bRequest == 0x03u && request->wValue == 0u &&
+            request->wIndex == 0u) {
+            // 64-byte device-info block, identical to the genuine ProCon2.
+            static const uint8_t kVendorInfo03[64] = {
+                0x01u, 0x00u, 0x48u, 0x45u, 0x4bu, 0x31u, 0x30u, 0x30u,
+                0x30u, 0x30u, 0x32u, 0x32u, 0x30u, 0x38u, 0x39u, 0x36u,
+                0x00u, 0x00u, 0x7eu, 0x05u, 0x69u, 0x20u, 0x01u, 0x06u,
+                0x01u, 0x23u, 0x23u, 0x23u, 0xa0u, 0xa0u, 0xa0u, 0xe6u,
+                0xe6u, 0xe6u, 0x32u, 0x32u, 0x32u, 0xffu, 0xffu, 0xffu,
+                0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu,
+                0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu,
+                0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu,
+            };
+            return tud_control_xfer(
+                rhport, request,
+                const_cast<uint8_t *>(kVendorInfo03), sizeof(kVendorInfo03));
+        }
+        if (request->bRequest == 0x02u && request->wValue == 0u &&
+            request->wIndex == 0u) {
+            // 16-byte block whose tail carries the controller's own BD_ADDR
+            // (same byte order as the 0x15/0x01 bulk business card), so the
+            // address the console whitelists is the Pico's real BLE address.
+            static uint8_t s_vendor_info02[16] = {
+                0x02u, 0x01u, 0x04u, 0x00u, 0x00u, 0x00u, 0x0cu, 0x00u,
+                0x02u, 0x03u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+            };
+            controller_addr_wire(&s_vendor_info02[10]);
+            return tud_control_xfer(rhport, request, s_vendor_info02,
+                                    sizeof(s_vendor_info02));
+        }
+        return false;
+    }
+
+    // Vendor OUT: the console issues 0x04 (wValue 0x0276) with no data payload.
+    if (request->bRequest == 0x04u && request->wValue == 0x0276u &&
+        request->wLength == 0u) {
+        return tud_control_status(rhport, request);
+    }
+    return false;
+}
