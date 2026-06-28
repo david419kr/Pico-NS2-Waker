@@ -5,16 +5,22 @@
 
 namespace ds5onswitch {
 
-// Public Bluetooth controller identity reported to the Switch Pro USB persona
-// and programmed into the CYW43 controller before BTstack powers HCI on.
-//
-// The Raspberry Pi CYW43 factory address (2c:cf:67:...) produced a byte-perfect
-// Switch 2 wake advertisement but the console never sent CONNECT_IND. Use the
-// Nintendo/Pro-Controller-family identity captured in
-// BLE-captures/procon1-handshake.pcapng together with that capture's USB
-// pairing material, so the USB registration record and BLE AdvA are coherent.
+// Bluetooth controller identity reported by the Switch Pro USB persona.
+// Captured from BLE-captures/procon1-handshake.pcapng together with that
+// capture's USB pairing material.
 constexpr std::array<uint8_t, 6> kSwitchProControllerBdAddr{
     0x98, 0xb6, 0xe9, 0xe6, 0xdc, 0x73,
+};
+
+// Experimental Switch 2 BLE wake identity.
+//
+// The Switch 2 ignored byte-perfect wake advertisements when the AdvA was the
+// Pico factory address or the captured Switch Pro USB identity above. The
+// working anomalous Joy-Con capture received CONNECT_IND from the console when
+// advertising from this public address, so keep USB persona identity and wake
+// AdvA deliberately separated for this test branch.
+constexpr std::array<uint8_t, 6> kSwitch2WakeBleBdAddr{
+    0xa0, 0x5a, 0x5f, 0xa5, 0x15, 0xc6,
 };
 
 } // namespace ds5onswitch

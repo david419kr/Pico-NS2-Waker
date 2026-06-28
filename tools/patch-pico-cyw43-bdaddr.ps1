@@ -15,17 +15,19 @@ if (-not (Test-Path -LiteralPath $TransportPath)) {
 $Source = Get-Content -LiteralPath $TransportPath -Raw
 
 $Replacement = @'
-    bd_addr_t addr = {0x98, 0xb6, 0xe9, 0xe6, 0xdc, 0x73};
+    bd_addr_t addr = {0xa0, 0x5a, 0x5f, 0xa5, 0x15, 0xc6};
     hci_set_chipset(btstack_chipset_cyw43_instance());
     // DS5onSwitch: make the controller's real public BT/BLE address match the
-    // Switch Pro USB identity. The default Pico SDK path derives this from the
-    // CYW43 factory/Wi-Fi MAC, which makes Switch 2 ignore byte-perfect wake
-    // advertisements before sending CONNECT_IND.
+    // anomalous Joy-Con wake identity captured in
+    // BLE-captures/anomalous-joycon-wake-filtered_a0-5a-5f-a5-15-c6_*.pcap.
+    // The Switch 2 ignored byte-perfect wake advertisements from both the Pico
+    // factory address and the captured Switch Pro USB identity before sending
+    // CONNECT_IND.
     hci_set_bd_addr(addr);
 '@
 
 if ($Source -like '*DS5onSwitch: make the controller''s real public BT/BLE address*') {
-    $Pattern = '(?s)    bd_addr_t addr = \{0x98, 0xb6, 0xe9, 0xe6, 0xdc, 0x73\};\s+    hci_set_chipset\(btstack_chipset_cyw43_instance\(\)\);\s+    // DS5onSwitch: make the controller''s real public BT/BLE address match the\s+    // Switch Pro USB identity\. The default Pico SDK path derives this from the\s+    // CYW43 factory/Wi-Fi MAC, which makes Switch 2 ignore byte-perfect wake\s+    // advertisements before sending CONNECT_IND\.\s+    hci_set_bd_addr\(addr\);'
+    $Pattern = '(?s)    bd_addr_t addr = \{0x(?:98|a0), 0x(?:b6|5a), 0x(?:e9|5f), 0x(?:e6|a5), 0x(?:dc|15), 0x(?:73|c6)\};\s+    hci_set_chipset\(btstack_chipset_cyw43_instance\(\)\);\s+    // DS5onSwitch: make the controller''s real public BT/BLE address match the\s+    // (?:Switch Pro USB identity\. The default Pico SDK path derives this from the\s+    // CYW43 factory/Wi-Fi MAC, which makes Switch 2 ignore byte-perfect wake\s+    // advertisements before sending CONNECT_IND\.|anomalous Joy-Con wake identity captured in\s+    // BLE-captures/anomalous-joycon-wake-filtered_a0-5a-5f-a5-15-c6_\*\.pcap\.\s+    // The Switch 2 ignored byte-perfect wake advertisements from both the Pico\s+    // factory address and the captured Switch Pro USB identity before sending\s+    // CONNECT_IND\.)\s+    hci_set_bd_addr\(addr\);'
     $Patched = [regex]::Replace($Source, $Pattern, [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $Replacement }, 1)
     if ($Patched -ne $Source) {
         Set-Content -LiteralPath $TransportPath -Value $Patched -NoNewline
