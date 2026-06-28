@@ -11,12 +11,14 @@ Credit: 이 프로젝트는 [awalol/DS5Dongle](https://github.com/awalol/DS5Dong
 - 모션 컨트롤과 진동을 지원합니다.
 - DualSense 3.5 mm 단자에 이어폰/헤드셋을 꽂으면 USB 오디오 출력으로 사용할 수 있습니다.
 - DualSense 마이크를 USB 마이크로 사용할 수 있습니다.
+- 최초 1회 설정 후 Nintendo Switch 2를 슬립 상태에서 깨울 수 있습니다. (Nintendo Switch 1 깨우기는 지원하지 않습니다.)
 
 ## 확인된 동작
 
 - PC: 3.5 mm 잭 오디오 출력과 마이크가 모두 작동합니다.
 - Nintendo Switch 1: 3.5 mm 잭 오디오 출력이 작동합니다.
 - Nintendo Switch 2: 3.5 mm 잭 오디오 출력과 마이크가 모두 작동합니다.
+- Nintendo Switch 2: 아래 설정 후 슬립 상태 깨우기가 작동합니다.
 
 ## 준비물
 
@@ -42,6 +44,21 @@ Credit: 이 프로젝트는 [awalol/DS5Dongle](https://github.com/awalol/DS5Dong
 4. 연결되면 Pico 2 W의 LED가 켜진 상태로 유지되고, Switch/PC에는 `Pro Controller`가 나타납니다.
 
 한 번 페어링한 DualSense는 다음부터 전원을 켜면 다시 연결됩니다.
+
+## Nintendo Switch 2 깨우기 설정
+
+Switch 2 깨우기를 사용하기 전에 이 항목을 먼저 읽어 주세요. 이 설정은 Switch 2의 컨트롤러 설정에서 이 컨트롤러를 삭제하지 않는 한 최초 1회만 필요합니다.
+
+DS5onSwitch는 평소에는 Switch Pro Controller로 동작합니다. Switch 2 깨우기 설정을 할 때만 임시로 `Switch 2 Pro Controller`로 동작할 수 있습니다. 이 모드는 Switch 2에 "이 기기는 깨우기 신호를 받을 수 있는 컨트롤러"라고 등록시키기 위한 용도입니다. 일반 플레이용으로 구현한 모드가 아니며, 많은 기능이 생략되어 있어 실사용에는 적합하지 않습니다.
+
+1. DualSense를 Pico 2 W와 페어링하고, Pico 2 W를 Switch 2에 연결합니다.
+2. DualSense의 PS 버튼을 누른 상태에서 터치패드를 2번 클릭한 뒤 PS 버튼을 놓습니다.
+3. Pico 2 W가 USB에서 `Switch 2 Pro Controller`로 다시 연결됩니다. Switch 2가 이 컨트롤러를 한 번 인식할 때까지 기다립니다.
+4. PS 버튼을 누른 상태에서 터치패드를 1번 클릭한 뒤 PS 버튼을 놓아 일반 `Pro Controller` 모드로 돌아옵니다.
+5. Switch 2를 슬립 모드로 둡니다.
+6. DualSense의 PS 버튼을 눌러 Switch 2를 깨웁니다.
+
+깨우기 중에는 DualSense Bluetooth 연결이 한 번 끊길 수 있습니다. Switch 2가 켜진 뒤 DualSense의 PS 버튼을 한 번 더 눌러 DualSense를 다시 켜고 재연결해 주세요.
 
 ## 오디오
 

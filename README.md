@@ -13,12 +13,14 @@ Credit: This project is not a fork of [awalol/DS5Dongle](https://github.com/awal
 - Supports motion controls and rumble.
 - Uses the DualSense 3.5 mm jack as a USB audio output when earphones or a headset are plugged in.
 - Exposes the DualSense microphone as a USB microphone.
+- Can wake a Nintendo Switch 2 from sleep after a one-time setup. (Nintendo Switch 1 wake is not supported.)
 
 ## Tested Behavior
 
 - PC: 3.5 mm jack audio output and microphone both work.
 - Nintendo Switch 1: 3.5 mm jack audio output works.
 - Nintendo Switch 2: 3.5 mm jack audio output and microphone both work.
+- Nintendo Switch 2: wake from sleep works after the setup below.
 
 ## Requirements
 
@@ -44,6 +46,21 @@ If this firmware is already installed, you can click BOOTSEL 4 times to enter US
 4. Once connected, the Pico 2 W LED stays on and the Switch/PC shows a `Pro Controller`.
 
 After the first pairing, the same DualSense will reconnect when powered on.
+
+## Nintendo Switch 2 Wake Setup
+
+Read this section before using Switch 2 wake. The setup is required once per Switch 2 unless you delete this controller from the Switch 2 controller settings.
+
+DS5onSwitch normally appears as a Switch Pro Controller. For Switch 2 wake setup only, it can temporarily appear as a `Switch 2 Pro Controller`. This mode exists only to make the Switch 2 register this device as wake-capable. It is intentionally incomplete and is not meant for normal gameplay.
+
+1. Pair the DualSense with the Pico 2 W and connect the Pico 2 W to the Switch 2.
+2. While holding PS on the DualSense, click the touchpad twice, then release PS.
+3. The Pico 2 W reconnects over USB as a `Switch 2 Pro Controller`. Let the Switch 2 recognize it once.
+4. While holding PS, click the touchpad once, then release PS to return to normal `Pro Controller` mode.
+5. Put the Switch 2 into sleep mode.
+6. Press PS on the DualSense to wake the Switch 2.
+
+During wake, the DualSense Bluetooth connection may drop once. After the Switch 2 wakes up, press PS again to turn the DualSense back on and reconnect it.
 
 ## Audio
 
