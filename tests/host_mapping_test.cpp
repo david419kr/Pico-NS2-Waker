@@ -326,6 +326,30 @@ void test_steam_controller_input_parser_and_mapping()
     assert(state.gyro_y == static_cast<int16_t>(-input.gyro_x));
     assert(state.gyro_z == input.gyro_z);
 
+    constexpr uint32_t dpad_mask = kNsUp | kNsRight | kNsDown | kNsLeft;
+    std::array<uint8_t, kSteamControllerStateReportSize> pad_report{};
+    pad_report[0] = kSteamControllerReportState;
+    write_u32_le(&pad_report[2], kSteamBtnLeftPadClick);
+    write_i16_le(&pad_report[18], 12000);
+    write_i16_le(&pad_report[20], 12000);
+    SteamControllerInput pad{};
+    assert(parse_steam_controller_report(pad_report.data(), pad_report.size(), pad));
+    assert(pad.left_pad_x == 12000);
+    assert(pad.left_pad_y == 12000);
+    const SwitchProState pad_state = map_steam_to_switch(pad);
+    assert((pad_state.buttons & dpad_mask) == (kNsUp | kNsRight));
+
+    pad.left_pad_x = 8000;
+    pad.left_pad_y = 0;
+    const SwitchProState deadzone_state = map_steam_to_switch(pad);
+    assert((deadzone_state.buttons & dpad_mask) == 0);
+
+    pad.buttons = kSteamBtnLeftPadClick | kSteamBtnDpadDown;
+    pad.left_pad_x = -12000;
+    pad.left_pad_y = 0;
+    const SwitchProState override_state = map_steam_to_switch(pad);
+    assert((override_state.buttons & dpad_mask) == kNsLeft);
+
     std::array<uint8_t, kSteamControllerStateReportSize + 1u> bt_report{};
     bt_report[0] = 0xa1;
     bt_report[1] = kSteamControllerReportStateLegacy;

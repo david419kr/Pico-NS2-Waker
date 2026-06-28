@@ -9,6 +9,7 @@ namespace {
 constexpr int16_t kSwitchAccelCountsPerG = 4096;
 constexpr int16_t kSwitchAccelDeadzoneCounts = 96;
 constexpr int32_t kSteamToSwitchAccelDivisor = 4;
+constexpr int32_t kSteamTrackpadDpadDeadzone = 9000;
 constexpr std::size_t kSteamFeatureCommandSize = 64;
 
 uint16_t read_u16_le(const uint8_t *p)
@@ -46,6 +47,18 @@ int32_t abs_i32(int32_t value)
     return value < 0 ? -value : value;
 }
 
+enum class SteamDpadDir : uint8_t {
+    None,
+    N,
+    NE,
+    E,
+    SE,
+    S,
+    SW,
+    W,
+    NW,
+};
+
 int16_t switch_accel_deadzone(int16_t value)
 {
     if (abs_i32(value) <= kSwitchAccelDeadzoneCounts) {
@@ -76,6 +89,85 @@ void map_dpad(uint32_t steam_buttons, uint32_t &switch_buttons)
     if (steam_buttons & kSteamBtnDpadLeft) {
         switch_buttons |= kNsLeft;
     }
+}
+
+SteamDpadDir trackpad_dpad(int16_t x, int16_t y, bool active)
+{
+    const int32_t ax = abs_i32(x);
+    const int32_t ay = abs_i32(y);
+
+    if (!active ||
+        (ax < kSteamTrackpadDpadDeadzone &&
+         ay < kSteamTrackpadDpadDeadzone)) {
+        return SteamDpadDir::None;
+    }
+
+    const bool diagonal = ax > 0 && ay > 0 &&
+                          ax * 100 >= ay * 84 &&
+                          ay * 100 >= ax * 84;
+    if (diagonal) {
+        if (x >= 0 && y >= 0) {
+            return SteamDpadDir::NE;
+        }
+        if (x >= 0 && y < 0) {
+            return SteamDpadDir::SE;
+        }
+        if (x < 0 && y < 0) {
+            return SteamDpadDir::SW;
+        }
+        return SteamDpadDir::NW;
+    }
+
+    if (ax >= ay) {
+        return x >= 0 ? SteamDpadDir::E : SteamDpadDir::W;
+    }
+    return y >= 0 ? SteamDpadDir::N : SteamDpadDir::S;
+}
+
+void map_dpad_dir(SteamDpadDir dir, uint32_t &switch_buttons)
+{
+    switch (dir) {
+    case SteamDpadDir::N:
+        switch_buttons |= kNsUp;
+        break;
+    case SteamDpadDir::NE:
+        switch_buttons |= kNsUp | kNsRight;
+        break;
+    case SteamDpadDir::E:
+        switch_buttons |= kNsRight;
+        break;
+    case SteamDpadDir::SE:
+        switch_buttons |= kNsDown | kNsRight;
+        break;
+    case SteamDpadDir::S:
+        switch_buttons |= kNsDown;
+        break;
+    case SteamDpadDir::SW:
+        switch_buttons |= kNsDown | kNsLeft;
+        break;
+    case SteamDpadDir::W:
+        switch_buttons |= kNsLeft;
+        break;
+    case SteamDpadDir::NW:
+        switch_buttons |= kNsUp | kNsLeft;
+        break;
+    case SteamDpadDir::None:
+        break;
+    }
+}
+
+void map_left_trackpad_dpad(const SteamControllerInput &input,
+                            uint32_t &switch_buttons)
+{
+    const SteamDpadDir dir = trackpad_dpad(
+        input.left_pad_x, input.left_pad_y,
+        (input.buttons & kSteamBtnLeftPadClick) != 0u);
+    if (dir == SteamDpadDir::None) {
+        return;
+    }
+
+    switch_buttons &= ~(kNsUp | kNsRight | kNsDown | kNsLeft);
+    map_dpad_dir(dir, switch_buttons);
 }
 
 uint16_t motor_to_u16(uint8_t value)
@@ -175,6 +267,7 @@ SwitchProState map_steam_to_switch(const SteamControllerInput &input)
     uint32_t buttons = 0;
 
     map_dpad(input.buttons, buttons);
+    map_left_trackpad_dpad(input, buttons);
 
     if (input.buttons & kSteamBtnA) {
         buttons |= kNsB;
