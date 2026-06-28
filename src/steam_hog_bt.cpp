@@ -28,6 +28,8 @@ constexpr uint32_t kPulseIntervalMs = 20;
 constexpr uint16_t kHidsDescriptorStorageSize = 1024;
 constexpr std::size_t kTxQueueDepth = 12;
 constexpr std::size_t kTxPayloadMax = 63;
+constexpr uint8_t kAdvEventDirectInd = 0x01;
+constexpr uint16_t kValveCompanyId = 0x055d;
 
 enum class SteamHogState : uint8_t {
     Idle,
@@ -133,10 +135,46 @@ bool adv_name_contains_steam(const uint8_t *data, uint8_t len, bool &has_name)
     return false;
 }
 
+bool ad_data_contains_company_id(const uint8_t *data, uint8_t len,
+                                 uint16_t company_id)
+{
+    if (data == nullptr) {
+        return false;
+    }
+
+    uint8_t pos = 0;
+    while (pos < len) {
+        const uint8_t field_len = data[pos++];
+        if (field_len == 0u) {
+            break;
+        }
+        if (static_cast<uint16_t>(pos) + field_len > len || field_len < 3u) {
+            break;
+        }
+        const uint8_t type = data[pos++];
+        const uint8_t value_len = static_cast<uint8_t>(field_len - 1u);
+        const uint8_t *value = &data[pos];
+        if (type == 0xffu && value_len >= 2u) {
+            const uint16_t observed =
+                static_cast<uint16_t>(value[0]) |
+                (static_cast<uint16_t>(value[1]) << 8u);
+            if (observed == company_id) {
+                return true;
+            }
+        }
+        pos = static_cast<uint8_t>(pos + value_len);
+    }
+    return false;
+}
+
 bool adv_is_steam_controller(const uint8_t *packet)
 {
     const uint8_t *ad_data = gap_event_advertising_report_get_data(packet);
     const uint8_t ad_len = gap_event_advertising_report_get_data_length(packet);
+    if (ad_data_contains_company_id(ad_data, ad_len, kValveCompanyId)) {
+        return true;
+    }
+
     const bool has_hid =
         ad_data_contains_uuid16(ad_len, ad_data,
                                 ORG_BLUETOOTH_SERVICE_HUMAN_INTERFACE_DEVICE);
@@ -147,6 +185,12 @@ bool adv_is_steam_controller(const uint8_t *packet)
     bool has_name = false;
     const bool name_is_steam = adv_name_contains_steam(ad_data, ad_len, has_name);
     return name_is_steam || !has_name;
+}
+
+bool adv_is_steam_reconnect_directed(const uint8_t *packet)
+{
+    return gap_event_advertising_report_get_advertising_event_type(packet) ==
+           kAdvEventDirectInd;
 }
 
 void tx_pop_front()
@@ -453,7 +497,8 @@ void hci_packet_handler(uint8_t packet_type, uint16_t channel,
 
     case GAP_EVENT_ADVERTISING_REPORT:
         if (g_state == SteamHogState::Scanning &&
-            adv_is_steam_controller(packet)) {
+            (adv_is_steam_controller(packet) ||
+             adv_is_steam_reconnect_directed(packet))) {
             connect_to_advertiser(packet);
         }
         break;
