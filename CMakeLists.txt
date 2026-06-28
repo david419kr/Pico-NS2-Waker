@@ -32,6 +32,7 @@ add_library(ds5onswitch_core
     src/dualsense_report.cpp
     src/haptics.cpp
     src/mapper.cpp
+    src/persona_combo_filter.cpp
     src/procon2_handshake.cpp
     src/switch2_wake.cpp
     src/switch_identity.cpp

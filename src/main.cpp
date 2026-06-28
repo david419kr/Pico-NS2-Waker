@@ -5,6 +5,7 @@
 #include "ds5onswitch/dualsense_output.h"
 #include "ds5onswitch/dualsense_report.h"
 #include "ds5onswitch/procon2_handshake.h"
+#include "ds5onswitch/persona_combo_filter.h"
 #include "ds5onswitch/switch_identity.h"
 #include "ds5onswitch/switch_pro.h"
 #include "ds5onswitch/switch_usb.h"
@@ -45,17 +46,7 @@ uint32_t g_home_wake_pending_ms = 0;
 bool g_auto_wake_armed = false;
 uint32_t g_ds_connected_since_ms = 0;
 uint8_t g_switch2_report_counter = 0;
-
-// Manual persona toggle: PS button acts as a modifier; touchpad-click taps
-// while PS is held are counted. On PS release, 1 tap selects the Switch Pro 1
-// persona (normal use) and 2 taps selects the Switch 2 Pro persona (business
-// card / pairing exchange only). Combo-consumed PS/touchpad presses are kept
-// out of the game input so they do not register as Home/Capture; PS alone is
-// still emitted as a one-frame Home click on release.
-bool g_combo_ps_prev = false;
-bool g_combo_tp_prev = false;
-bool g_combo_suppress_tp_until_release = false;
-uint8_t g_combo_tap_count = 0;
+PersonaComboFilter g_persona_combo_filter;
 
 constexpr uint32_t kUsbUnmountDebounceMs = 1000;
 constexpr uint32_t kHomeWakePendingWindowMs = 3000;
@@ -245,66 +236,14 @@ void __not_in_flash_func(on_dualsense_bt_data)(DualSenseBtChannel channel,
         return;
     }
 
-    // --- Manual persona toggle combo (PS held + touchpad-click taps) ---------
-    const bool ps_down = (input.buttons & kDs5Ps) != 0;
-    const bool tp_down = (input.buttons & kDs5TouchpadClick) != 0;
-    const bool ps_release = !ps_down && g_combo_ps_prev;
-    const bool tp_edge = tp_down && !g_combo_tp_prev;
-    bool combo_consumed_ps = false;
-    bool combo_consumed_tp = false;
-    bool synthesize_ps_click = false;
-
-    if (g_combo_suppress_tp_until_release) {
-        if (tp_down) {
-            combo_consumed_tp = true;
-        } else {
-            g_combo_suppress_tp_until_release = false;
-        }
-    }
-
-    if (ps_down) {
-        // While PS is held, every touchpad click is a combo tap, not Capture.
-        combo_consumed_ps = true;
-        if (tp_edge && g_combo_tap_count < 0xFFu) {
-            ++g_combo_tap_count;
-        }
-        if (tp_down) {
-            combo_consumed_tp = true;
-        }
-    } else if (ps_release) {
-        // PS released: apply the toggle if any touchpad taps were counted.
-        if (g_combo_tap_count == 1u) {
-            select_switch_pro_persona();
-        } else if (g_combo_tap_count >= 2u) {
-            select_switch2_pro_persona();
-        }
-        if (g_combo_tap_count == 0u) {
-            // PS alone must keep its original Home/wake role. Since we hold PS
-            // back while checking for a combo, emit a one-frame Home click on
-            // release when no touchpad tap happened.
-            synthesize_ps_click = true;
-        } else {
-            // A combo was issued; swallow the trailing touchpad state for one
-            // or more frames so it does not leak into game input as Capture.
-            combo_consumed_tp = tp_down;
-            g_combo_suppress_tp_until_release = tp_down;
-        }
-        g_combo_tap_count = 0u;
-    }
-
-    g_combo_ps_prev = ps_down;
-    g_combo_tp_prev = tp_down;
-
-    // Strip combo-consumed presses so they never reach the Switch as
-    // Home/Capture.
-    if (combo_consumed_ps) {
-        input.buttons &= ~static_cast<uint32_t>(kDs5Ps);
-    }
-    if (combo_consumed_tp) {
-        input.buttons &= ~static_cast<uint32_t>(kDs5TouchpadClick);
-    }
-    if (synthesize_ps_click) {
-        input.buttons |= static_cast<uint32_t>(kDs5Ps);
+    const uint32_t now = board_millis();
+    const PersonaComboFilterResult combo =
+        g_persona_combo_filter.process(input.buttons, now);
+    input.buttons = combo.buttons;
+    if (combo.request == PersonaComboRequest::SwitchPro) {
+        select_switch_pro_persona();
+    } else if (combo.request == PersonaComboRequest::Switch2Pro) {
+        select_switch2_pro_persona();
     }
 
     const bool home_down = (input.buttons & kDs5Ps) != 0;
@@ -312,7 +251,7 @@ void __not_in_flash_func(on_dualsense_bt_data)(DualSenseBtChannel channel,
     g_last_ds_buttons = input.buttons;
     if (home_edge) {
         g_home_wake_pending = true;
-        g_home_wake_pending_ms = board_millis();
+        g_home_wake_pending_ms = now;
     }
 
     const bool mute_button_down = (input.buttons & kDs5Mute) != 0;
@@ -369,10 +308,7 @@ void __not_in_flash_func(service_dualsense_connection)()
         g_last_ds_buttons = 0;
         g_auto_wake_armed = false;
         g_usb_reconnect_pending = false;
-        g_combo_ps_prev = false;
-        g_combo_tp_prev = false;
-        g_combo_suppress_tp_until_release = false;
-        g_combo_tap_count = 0;
+        g_persona_combo_filter.reset();
         usb_descriptors_set_controller_persona(UsbControllerPersona::SwitchPro);
         g_usb_persona = UsbAudioPersona::HidOnly;
         usb_descriptors_set_audio_persona(g_usb_persona);

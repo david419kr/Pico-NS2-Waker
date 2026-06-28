@@ -2,6 +2,7 @@
 #include "ds5onswitch/dualsense_report.h"
 #include "ds5onswitch/haptics.h"
 #include "ds5onswitch/mapper.h"
+#include "ds5onswitch/persona_combo_filter.h"
 #include "ds5onswitch/procon2_handshake.h"
 #include "ds5onswitch/switch_identity.h"
 #include "ds5onswitch/switch_pro.h"
@@ -60,6 +61,62 @@ void test_button_mapping()
     assert((report[4] & 0x3f) == 0x3f);
     assert((report[5] & 0xc6) == 0xc6);
     assert(report[12] == 0x38);
+}
+
+void test_persona_combo_filter()
+{
+    PersonaComboFilter filter;
+
+    PersonaComboFilterResult r = filter.process(kDs5Ps, 0);
+    assert(r.request == PersonaComboRequest::None);
+    assert((r.buttons & kDs5Ps) != 0);
+    r = filter.process(kDs5Ps, 8);
+    assert(r.request == PersonaComboRequest::None);
+    assert((r.buttons & kDs5Ps) != 0);
+    r = filter.process(0, 16);
+    assert(r.request == PersonaComboRequest::None);
+    assert((r.buttons & kDs5Ps) == 0);
+
+    filter.reset();
+    (void)filter.process(kDs5Ps, 0);
+    r = filter.process(kDs5Ps | kDs5TouchpadClick, 8);
+    assert(r.request == PersonaComboRequest::None);
+    assert((r.buttons & kDs5Ps) != 0);
+    assert((r.buttons & kDs5TouchpadClick) == 0);
+    r = filter.process(kDs5TouchpadClick, 16);
+    assert(r.request == PersonaComboRequest::SwitchPro);
+    assert((r.buttons & kDs5Ps) == 0);
+    assert((r.buttons & kDs5TouchpadClick) == 0);
+    r = filter.process(kDs5TouchpadClick, 24);
+    assert(r.request == PersonaComboRequest::None);
+    assert((r.buttons & kDs5TouchpadClick) == 0);
+
+    filter.reset();
+    (void)filter.process(kDs5Ps, 0);
+    (void)filter.process(kDs5Ps | kDs5TouchpadClick, 8);
+    (void)filter.process(kDs5Ps, 16);
+    (void)filter.process(kDs5Ps | kDs5TouchpadClick, 24);
+    (void)filter.process(kDs5Ps, 32);
+    r = filter.process(0, 40);
+    assert(r.request == PersonaComboRequest::Switch2Pro);
+    assert((r.buttons & kDs5Ps) == 0);
+    assert((r.buttons & kDs5TouchpadClick) == 0);
+
+    filter.reset();
+    (void)filter.process(kDs5Ps, 0);
+    r = filter.process(0, 8);
+    assert((r.buttons & kDs5Ps) == 0);
+    r = filter.process(kDs5Ps, 16);
+    assert(r.request == PersonaComboRequest::None);
+    assert((r.buttons & kDs5Ps) != 0);
+    r = filter.process(kDs5Ps | kDs5TouchpadClick, 24);
+    assert(r.request == PersonaComboRequest::None);
+    assert((r.buttons & kDs5Ps) != 0);
+    assert((r.buttons & kDs5TouchpadClick) == 0);
+    r = filter.process(0, 32);
+    assert(r.request == PersonaComboRequest::SwitchPro);
+    assert((r.buttons & kDs5Ps) == 0);
+    assert((r.buttons & kDs5TouchpadClick) == 0);
 }
 
 void test_axis_and_motion_mapping()
@@ -657,6 +714,7 @@ void test_procon2_extended_handshake()
 int main()
 {
     test_button_mapping();
+    test_persona_combo_filter();
     test_axis_and_motion_mapping();
     test_nrf5340_steam_motion_axis_parity();
     test_haptics();
