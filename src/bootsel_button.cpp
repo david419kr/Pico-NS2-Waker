@@ -39,6 +39,7 @@ bool button_hold_pending = false;
 bool button_normal_led_enabled = true;
 bool button_normal_led_loaded = false;
 bool button_normal_led_dirty = false;
+bool button_debug_usb_requested = false;
 
 int button_clear_flash_toggles_remaining = 0;
 uint32_t button_clear_flash_last_toggle_ms = 0;
@@ -178,6 +179,9 @@ void button_dispatch(int clicks)
         reboot_to_app();
     } else if (clicks == 4) {
         reboot_to_bootsel();
+    } else if (clicks == 5) {
+        button_debug_usb_requested = true;
+        std::printf("[BTN] BOOTSEL 5 clicks - debug USB\n");
     } else {
         std::printf("[BTN] BOOTSEL %d clicks - no action\n", clicks);
     }
@@ -247,6 +251,13 @@ void __not_in_flash_func(bootsel_button_task)()
 bool __not_in_flash_func(bootsel_button_interaction_active)()
 {
     return button_fsm != 0;
+}
+
+bool __not_in_flash_func(bootsel_button_debug_usb_requested)()
+{
+    const bool requested = button_debug_usb_requested;
+    button_debug_usb_requested = false;
+    return requested;
 }
 
 bool __not_in_flash_func(bootsel_button_normal_led_enabled)()

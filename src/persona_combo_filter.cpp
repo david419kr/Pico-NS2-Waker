@@ -5,35 +5,43 @@ namespace ds5onswitch {
 PersonaComboFilterResult PersonaComboFilter::process(uint32_t raw_buttons,
                                                      uint32_t now_ms)
 {
+    return process(raw_buttons, kDs5Ps, kDs5TouchpadClick, now_ms);
+}
+
+PersonaComboFilterResult PersonaComboFilter::process(uint32_t raw_buttons,
+                                                     uint32_t home_button,
+                                                     uint32_t capture_button,
+                                                     uint32_t now_ms)
+{
     (void)now_ms;
 
     PersonaComboFilterResult result{};
     result.buttons = raw_buttons;
 
-    const bool ps_down = (raw_buttons & kDs5Ps) != 0;
-    const bool tp_down = (raw_buttons & kDs5TouchpadClick) != 0;
-    const bool ps_release = !ps_down && ps_prev_;
-    const bool tp_edge = tp_down && !tp_prev_;
-    bool combo_consumed_tp = false;
+    const bool home_down = (raw_buttons & home_button) != 0;
+    const bool capture_down = (raw_buttons & capture_button) != 0;
+    const bool home_release = !home_down && home_prev_;
+    const bool capture_edge = capture_down && !capture_prev_;
+    bool combo_consumed_capture = false;
 
-    if (suppress_tp_until_release_) {
-        if (tp_down) {
-            combo_consumed_tp = true;
+    if (suppress_capture_until_release_) {
+        if (capture_down) {
+            combo_consumed_capture = true;
         } else {
-            suppress_tp_until_release_ = false;
+            suppress_capture_until_release_ = false;
         }
     }
 
-    if (ps_down) {
-        // PS/Home always passes through. Touchpad clicks while PS is held are
+    if (home_down) {
+        // Home always passes through. Capture clicks while Home is held are
         // persona combo taps, so keep them out of game input as Capture.
-        if (tp_edge && tap_count_ < 0xFFu) {
+        if (capture_edge && tap_count_ < 0xFFu) {
             ++tap_count_;
         }
-        if (tp_down) {
-            combo_consumed_tp = true;
+        if (capture_down) {
+            combo_consumed_capture = true;
         }
-    } else if (ps_release) {
+    } else if (home_release) {
         if (tap_count_ == 1u) {
             result.request = PersonaComboRequest::SwitchPro;
         } else if (tap_count_ >= 2u) {
@@ -41,17 +49,17 @@ PersonaComboFilterResult PersonaComboFilter::process(uint32_t raw_buttons,
         }
 
         if (tap_count_ != 0u) {
-            combo_consumed_tp = tp_down;
-            suppress_tp_until_release_ = tp_down;
+            combo_consumed_capture = capture_down;
+            suppress_capture_until_release_ = capture_down;
         }
         tap_count_ = 0;
     }
 
-    ps_prev_ = ps_down;
-    tp_prev_ = tp_down;
+    home_prev_ = home_down;
+    capture_prev_ = capture_down;
 
-    if (combo_consumed_tp) {
-        result.buttons &= ~static_cast<uint32_t>(kDs5TouchpadClick);
+    if (combo_consumed_capture) {
+        result.buttons &= ~capture_button;
     }
 
     return result;
@@ -59,9 +67,9 @@ PersonaComboFilterResult PersonaComboFilter::process(uint32_t raw_buttons,
 
 void PersonaComboFilter::reset()
 {
-    ps_prev_ = false;
-    tp_prev_ = false;
-    suppress_tp_until_release_ = false;
+    home_prev_ = false;
+    capture_prev_ = false;
+    suppress_capture_until_release_ = false;
     tap_count_ = 0;
 }
 

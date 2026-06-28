@@ -117,6 +117,30 @@ void test_persona_combo_filter()
     assert(r.request == PersonaComboRequest::SwitchPro);
     assert((r.buttons & kDs5Ps) == 0);
     assert((r.buttons & kDs5TouchpadClick) == 0);
+
+    filter.reset();
+    r = filter.process(kNsHome, kNsHome, kNsCapture, 0);
+    assert(r.request == PersonaComboRequest::None);
+    assert((r.buttons & kNsHome) != 0);
+    r = filter.process(kNsHome | kNsCapture, kNsHome, kNsCapture, 8);
+    assert(r.request == PersonaComboRequest::None);
+    assert((r.buttons & kNsHome) != 0);
+    assert((r.buttons & kNsCapture) == 0);
+    r = filter.process(kNsCapture, kNsHome, kNsCapture, 16);
+    assert(r.request == PersonaComboRequest::SwitchPro);
+    assert((r.buttons & kNsHome) == 0);
+    assert((r.buttons & kNsCapture) == 0);
+
+    filter.reset();
+    (void)filter.process(kNsHome, kNsHome, kNsCapture, 0);
+    (void)filter.process(kNsHome | kNsCapture, kNsHome, kNsCapture, 8);
+    (void)filter.process(kNsHome, kNsHome, kNsCapture, 16);
+    (void)filter.process(kNsHome | kNsCapture, kNsHome, kNsCapture, 24);
+    (void)filter.process(kNsHome, kNsHome, kNsCapture, 32);
+    r = filter.process(0, kNsHome, kNsCapture, 40);
+    assert(r.request == PersonaComboRequest::Switch2Pro);
+    assert((r.buttons & kNsHome) == 0);
+    assert((r.buttons & kNsCapture) == 0);
 }
 
 void test_axis_and_motion_mapping()
@@ -644,6 +668,65 @@ void test_switch2_pro_button_bytes()
     assert(out[2] == (uint8_t)((b >> 16) & 0x1fu));
 }
 
+void test_switch_pro_bt_input_parser()
+{
+    SwitchProState state{};
+    state.buttons = kNsB | kNsA | kNsY | kNsX | kNsL | kNsR | kNsZL |
+                    kNsZR | kNsMinus | kNsPlus | kNsLeftStick |
+                    kNsRightStick | kNsHome | kNsCapture | kNsUp |
+                    kNsDown | kNsLeft | kNsRight;
+    state.left_x = 0x123;
+    state.left_y = 0x456;
+    state.right_x = 0x789;
+    state.right_y = 0xabc;
+    state.has_imu = true;
+    state.accel_x = -100;
+    state.accel_y = 200;
+    state.accel_z = -300;
+    state.gyro_x = 400;
+    state.gyro_y = -500;
+    state.gyro_z = 600;
+
+    const SwitchProInputReport body =
+        build_switch_pro_input_report(state, 0x0a, true);
+    std::array<uint8_t, kSwitchProInputReportSize + 1u> bt{};
+    bt[0] = 0xa1u;
+    std::memcpy(bt.data() + 1, body.data(), body.size());
+
+    SwitchProState parsed{};
+    assert(parse_switch_pro_bt_report(bt.data(), bt.size(), parsed));
+    assert(parsed.buttons == state.buttons);
+    assert(parsed.left_x == state.left_x);
+    assert(parsed.left_y == state.left_y);
+    assert(parsed.right_x == state.right_x);
+    assert(parsed.right_y == state.right_y);
+    assert(parsed.has_imu);
+    assert(parsed.accel_x == state.accel_x);
+    assert(parsed.accel_y == state.accel_y);
+    assert(parsed.accel_z == state.accel_z);
+    assert(parsed.gyro_x == state.gyro_x);
+    assert(parsed.gyro_y == state.gyro_y);
+    assert(parsed.gyro_z == state.gyro_z);
+
+    SwitchProInputReport subcmd = body;
+    subcmd[0] = kSwitchProSubcommandReplyReportId;
+    assert(parse_switch_pro_input_report(subcmd.data(), subcmd.size(), parsed));
+    assert(parsed.buttons == state.buttons);
+
+    SwitchReport patched = body;
+    write_switch_pro_report_buttons(patched, kNsHome);
+    assert(parse_switch_pro_input_report(patched.data(), patched.size(), parsed));
+    assert((parsed.buttons & kNsHome) != 0);
+    assert((parsed.buttons & kNsCapture) == 0);
+    assert((parsed.buttons & kNsA) == 0);
+
+    uint8_t dualsense_report[kDualSenseBt31PayloadSize + 3u]{};
+    dualsense_report[0] = 0xa1u;
+    dualsense_report[1] = 0x31u;
+    assert(!parse_switch_pro_bt_report(dualsense_report,
+                                       sizeof(dualsense_report), parsed));
+}
+
 void test_procon2_extended_handshake()
 {
     const uint8_t ctrl_addr_wire[] = {0x56, 0x34, 0x12, 0x67, 0xcf, 0x2c};
@@ -723,6 +806,7 @@ int main()
     test_switch_usb_reports();
     test_switch2_wake_adv_builder();
     test_switch2_pro_button_bytes();
+    test_switch_pro_bt_input_parser();
     test_procon2_extended_handshake();
     test_switch_identity_runtime();
     test_procon2_handshake_replies();

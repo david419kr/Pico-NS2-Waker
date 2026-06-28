@@ -13,6 +13,61 @@ void put_i16_le(uint8_t *out, int16_t value)
     out[1] = static_cast<uint8_t>((u >> 8) & 0xffu);
 }
 
+int16_t read_i16_le(const uint8_t *in)
+{
+    return static_cast<int16_t>(static_cast<uint16_t>(in[0]) |
+                                (static_cast<uint16_t>(in[1]) << 8u));
+}
+
+uint16_t unpack_switch_stick12(const uint8_t in[3], bool x_axis)
+{
+    if (x_axis) {
+        return static_cast<uint16_t>(
+            static_cast<uint16_t>(in[0]) |
+            ((static_cast<uint16_t>(in[1]) & 0x0fu) << 8u));
+    }
+    return static_cast<uint16_t>(
+        ((static_cast<uint16_t>(in[1]) >> 4u) |
+         (static_cast<uint16_t>(in[2]) << 4u)) &
+        0x0fffu);
+}
+
+void add_button(uint32_t &buttons, uint8_t byte, uint8_t mask,
+                SwitchButton button)
+{
+    if ((byte & mask) != 0) {
+        buttons |= static_cast<uint32_t>(button);
+    }
+}
+
+uint32_t parse_switch_pro_button_bytes(const uint8_t in[3])
+{
+    uint32_t buttons = 0;
+
+    add_button(buttons, in[0], 0x01u, kNsY);
+    add_button(buttons, in[0], 0x02u, kNsX);
+    add_button(buttons, in[0], 0x04u, kNsB);
+    add_button(buttons, in[0], 0x08u, kNsA);
+    add_button(buttons, in[0], 0x40u, kNsR);
+    add_button(buttons, in[0], 0x80u, kNsZR);
+
+    add_button(buttons, in[1], 0x01u, kNsMinus);
+    add_button(buttons, in[1], 0x02u, kNsPlus);
+    add_button(buttons, in[1], 0x04u, kNsRightStick);
+    add_button(buttons, in[1], 0x08u, kNsLeftStick);
+    add_button(buttons, in[1], 0x10u, kNsHome);
+    add_button(buttons, in[1], 0x20u, kNsCapture);
+
+    add_button(buttons, in[2], 0x01u, kNsDown);
+    add_button(buttons, in[2], 0x02u, kNsUp);
+    add_button(buttons, in[2], 0x04u, kNsRight);
+    add_button(buttons, in[2], 0x08u, kNsLeft);
+    add_button(buttons, in[2], 0x40u, kNsL);
+    add_button(buttons, in[2], 0x80u, kNsZL);
+
+    return buttons;
+}
+
 } // namespace
 
 void pack_switch_stick12(uint8_t out[3], uint16_t x, uint16_t y)
@@ -129,6 +184,64 @@ SwitchProInputReport build_switch_pro_input_report(const SwitchProState &state,
     }
 
     return out;
+}
+
+void write_switch_pro_report_buttons(SwitchReport &report, uint32_t buttons)
+{
+    if (report[0] != kSwitchProFullInputReportId &&
+        report[0] != kSwitchProSubcommandReplyReportId) {
+        return;
+    }
+
+    uint8_t button_bytes[3]{};
+    switch_pro_button_bytes(buttons, button_bytes);
+    report[3] = button_bytes[0];
+    report[4] = button_bytes[1];
+    report[5] = button_bytes[2];
+}
+
+bool parse_switch_pro_input_report(const uint8_t *report, std::size_t size,
+                                   SwitchProState &out)
+{
+    if (report == nullptr || size < 13u) {
+        return false;
+    }
+    if (report[0] != kSwitchProFullInputReportId &&
+        report[0] != kSwitchProSubcommandReplyReportId) {
+        return false;
+    }
+
+    SwitchProState parsed{};
+    parsed.buttons = parse_switch_pro_button_bytes(&report[3]);
+    parsed.left_x = unpack_switch_stick12(&report[6], true);
+    parsed.left_y = unpack_switch_stick12(&report[6], false);
+    parsed.right_x = unpack_switch_stick12(&report[9], true);
+    parsed.right_y = unpack_switch_stick12(&report[9], false);
+
+    if (size >= 49u) {
+        parsed.has_imu = true;
+        parsed.accel_x = read_i16_le(&report[13]);
+        parsed.accel_y = read_i16_le(&report[15]);
+        parsed.accel_z = read_i16_le(&report[17]);
+        parsed.gyro_x = read_i16_le(&report[19]);
+        parsed.gyro_y = read_i16_le(&report[21]);
+        parsed.gyro_z = read_i16_le(&report[23]);
+    }
+
+    out = parsed;
+    return true;
+}
+
+bool parse_switch_pro_bt_report(const uint8_t *report, std::size_t size,
+                                SwitchProState &out)
+{
+    if (report == nullptr || size == 0) {
+        return false;
+    }
+    if (report[0] == 0xa1u) {
+        return parse_switch_pro_input_report(report + 1, size - 1u, out);
+    }
+    return parse_switch_pro_input_report(report, size, out);
 }
 
 } // namespace ds5onswitch

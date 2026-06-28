@@ -20,12 +20,14 @@ struct PersonaComboFilterResult {
 class PersonaComboFilter {
 public:
     PersonaComboFilterResult process(uint32_t raw_buttons, uint32_t now_ms);
+    PersonaComboFilterResult process(uint32_t raw_buttons, uint32_t home_button,
+                                     uint32_t capture_button, uint32_t now_ms);
     void reset();
 
 private:
-    bool ps_prev_ = false;
-    bool tp_prev_ = false;
-    bool suppress_tp_until_release_ = false;
+    bool home_prev_ = false;
+    bool capture_prev_ = false;
+    bool suppress_capture_until_release_ = false;
     uint8_t tap_count_ = 0;
 };
 

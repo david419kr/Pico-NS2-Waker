@@ -1,5 +1,6 @@
 #include "ds5onswitch/mapper.h"
 #include "ds5onswitch/bootsel_button.h"
+#include "ds5onswitch/bt_debug_log.h"
 #include "ds5onswitch/dualsense_audio.h"
 #include "ds5onswitch/dualsense_bt.h"
 #include "ds5onswitch/dualsense_output.h"
@@ -37,19 +38,26 @@ bool g_ds_output_dirty = false;
 UsbAudioPersona g_usb_persona = UsbAudioPersona::HidOnly;
 bool g_usb_reconnect_pending = false;
 uint32_t g_usb_reconnect_at_ms = 0;
+bool g_debug_usb_mode = false;
 bool g_ds_mute_button_down = false;
 bool g_usb_unmounted = false;
 uint32_t g_usb_unmounted_since_ms = 0;
 uint32_t g_last_ds_buttons = 0;
+uint32_t g_last_ns_buttons = 0;
 bool g_home_wake_pending = false;
 uint32_t g_home_wake_pending_ms = 0;
 bool g_auto_wake_armed = false;
 uint32_t g_ds_connected_since_ms = 0;
 uint8_t g_switch2_report_counter = 0;
 PersonaComboFilter g_persona_combo_filter;
+SwitchReport g_procon_passthrough_report{};
+bool g_procon_passthrough_valid = false;
+uint32_t g_debug_log_read_offset = 0;
 
 constexpr uint32_t kUsbUnmountDebounceMs = 1000;
 constexpr uint32_t kHomeWakePendingWindowMs = 3000;
+constexpr uint8_t kDebugLogReadFeatureReportId = 0x7e;
+constexpr uint8_t kDebugLogControlFeatureReportId = 0x7f;
 
 void configure_switch_identity_from_radio()
 {
@@ -165,7 +173,7 @@ void select_switch_pro_persona()
         return;
     }
     usb_descriptors_set_controller_persona(UsbControllerPersona::SwitchPro);
-    g_usb_persona = dualsense_bt_is_connected()
+    g_usb_persona = dualsense_bt_controller_kind() == BtControllerKind::DualSense
         ? dualsense_audio_desired_persona()
         : UsbAudioPersona::HidOnly;
     usb_descriptors_set_audio_persona(g_usb_persona);
@@ -217,11 +225,77 @@ void __not_in_flash_func(send_report)(const SwitchReport &report)
     (void)tud_hid_report(report[0], report.data() + 1, report.size() - 1);
 }
 
+bool copy_switch_pro_full_report_from_bt(const uint8_t *data, std::size_t size,
+                                         SwitchReport &out)
+{
+    if (data == nullptr || size == 0) {
+        return false;
+    }
+
+    if (data[0] == 0xa1u) {
+        ++data;
+        --size;
+    }
+    if (size < 49u || data[0] != kSwitchProFullInputReportId) {
+        return false;
+    }
+
+    out.fill(0);
+    const std::size_t copy_len = std::min<std::size_t>(size, out.size());
+    std::memcpy(out.data(), data, copy_len);
+    return true;
+}
+
+bool bt_controller_is_dualsense()
+{
+    return dualsense_bt_controller_kind() == BtControllerKind::DualSense;
+}
+
+bool bt_controller_is_switch_pro()
+{
+    return dualsense_bt_controller_kind() == BtControllerKind::SwitchPro;
+}
+
 void __not_in_flash_func(on_dualsense_bt_data)(DualSenseBtChannel channel,
                                                const uint8_t *data,
                                                std::size_t size)
 {
     if (channel != DualSenseBtChannel::Interrupt) {
+        return;
+    }
+
+    if (bt_controller_is_switch_pro()) {
+        SwitchProState state{};
+        if (!parse_switch_pro_bt_report(data, size, state)) {
+            return;
+        }
+
+        const uint32_t now = board_millis();
+        const PersonaComboFilterResult combo =
+            g_persona_combo_filter.process(state.buttons, kNsHome, kNsCapture,
+                                           now);
+        state.buttons = combo.buttons;
+        if (combo.request == PersonaComboRequest::SwitchPro) {
+            select_switch_pro_persona();
+        } else if (combo.request == PersonaComboRequest::Switch2Pro) {
+            select_switch2_pro_persona();
+        }
+
+        const bool home_down = (state.buttons & kNsHome) != 0;
+        const bool home_edge = home_down && (g_last_ns_buttons & kNsHome) == 0;
+        g_last_ns_buttons = state.buttons;
+        if (home_edge) {
+            g_home_wake_pending = true;
+            g_home_wake_pending_ms = now;
+        }
+
+        SwitchReport raw_report{};
+        if (copy_switch_pro_full_report_from_bt(data, size, raw_report)) {
+            write_switch_pro_report_buttons(raw_report, state.buttons);
+            g_procon_passthrough_report = raw_report;
+            g_procon_passthrough_valid = true;
+        }
+        g_switch_usb.set_state(state);
         return;
     }
 
@@ -264,6 +338,7 @@ void __not_in_flash_func(on_dualsense_bt_data)(DualSenseBtChannel channel,
 
     dualsense_audio_update_status(input);
     if (usb_descriptors_controller_persona() == UsbControllerPersona::SwitchPro &&
+        bt_controller_is_dualsense() &&
         dualsense_audio_desired_persona() != g_usb_persona) {
         g_usb_persona = dualsense_audio_desired_persona();
         usb_descriptors_set_audio_persona(g_usb_persona);
@@ -289,30 +364,50 @@ void __not_in_flash_func(apply_switch_feedback)(
     g_ds_output_dirty = true;
 }
 
+void __not_in_flash_func(forward_switch_output_to_bt_procon)(
+    const SwitchReport &report, std::size_t size)
+{
+    if (!bt_controller_is_switch_pro() || size == 0) {
+        return;
+    }
+    if (report[0] != kSwitchOutputSubcommand &&
+        report[0] != kSwitchOutputRumbleOnly) {
+        return;
+    }
+    (void)dualsense_bt_send_raw_output_report(report.data(), size);
+}
+
 void __not_in_flash_func(service_dualsense_connection)()
 {
     static bool was_connected = false;
+    static BtControllerKind last_kind = BtControllerKind::Unknown;
     const bool connected = dualsense_bt_is_connected();
-    if (connected == was_connected) {
+    const BtControllerKind kind = dualsense_bt_controller_kind();
+    if (connected == was_connected && kind == last_kind) {
         return;
     }
 
+    const bool became_connected = connected && !was_connected;
     was_connected = connected;
-    dualsense_audio_set_connected(connected);
-    g_ds_output.reset();
-    g_ds_output.set_mic_muted(dualsense_audio_mic_muted());
-    g_ds_output_dirty = connected;
+    last_kind = kind;
 
     if (!connected) {
+        dualsense_audio_set_connected(false);
+        g_ds_output.reset();
+        g_ds_output_dirty = false;
         g_ds_mute_button_down = false;
         g_last_ds_buttons = 0;
+        g_last_ns_buttons = 0;
         g_auto_wake_armed = false;
         g_usb_reconnect_pending = false;
+        g_procon_passthrough_valid = false;
         g_persona_combo_filter.reset();
         usb_descriptors_set_controller_persona(UsbControllerPersona::SwitchPro);
         g_usb_persona = UsbAudioPersona::HidOnly;
         usb_descriptors_set_audio_persona(g_usb_persona);
-        tud_disconnect();
+        if (!g_debug_usb_mode) {
+            tud_disconnect();
+        }
 
         DualSenseInput neutral{};
         neutral.has_imu = true;
@@ -320,8 +415,22 @@ void __not_in_flash_func(service_dualsense_connection)()
         return;
     }
 
-    g_auto_wake_armed = true;
-    g_ds_connected_since_ms = board_millis();
+    if (became_connected) {
+        g_debug_usb_mode = false;
+        g_auto_wake_armed = true;
+        g_ds_connected_since_ms = board_millis();
+        request_usb_reconnect();
+    }
+
+    const bool dualsense_connected = kind == BtControllerKind::DualSense;
+    dualsense_audio_set_connected(dualsense_connected);
+    g_ds_output.reset();
+    g_ds_output.set_mic_muted(dualsense_audio_mic_muted());
+    g_ds_output_dirty = dualsense_connected;
+    if (!dualsense_connected) {
+        g_ds_mute_button_down = false;
+        g_last_ds_buttons = 0;
+    }
 }
 
 void __not_in_flash_func(service_usb_mount_tracking)()
@@ -381,7 +490,7 @@ void __not_in_flash_func(service_switch2_wake_policy)()
 
 void __not_in_flash_func(service_dualsense_output)()
 {
-    if (!dualsense_bt_is_connected()) {
+    if (!dualsense_bt_is_connected() || !bt_controller_is_dualsense()) {
         return;
     }
 
@@ -463,6 +572,8 @@ void __not_in_flash_func(service_usb_reports)()
     if (usb_descriptors_controller_persona() ==
         UsbControllerPersona::Switch2ProRegistration) {
         send_report(build_switch2_registration_input_report());
+    } else if (bt_controller_is_switch_pro() && g_procon_passthrough_valid) {
+        send_report(g_procon_passthrough_report);
     } else {
         send_report(g_switch_usb.build_input_report());
     }
@@ -486,6 +597,20 @@ void __not_in_flash_func(service_usb_reconnect)()
 
     tud_connect();
     g_usb_reconnect_pending = false;
+}
+
+void __not_in_flash_func(service_debug_usb_request)()
+{
+    if (!bootsel_button_debug_usb_requested()) {
+        return;
+    }
+
+    g_debug_usb_mode = true;
+    g_usb_reconnect_pending = false;
+    usb_descriptors_set_controller_persona(UsbControllerPersona::SwitchPro);
+    g_usb_persona = UsbAudioPersona::HidOnly;
+    usb_descriptors_set_audio_persona(g_usb_persona);
+    tud_connect();
 }
 
 void service_led()
@@ -531,6 +656,7 @@ void __no_inline_not_in_flash_func(app_loop)()
             continue;
         }
 
+        service_debug_usb_request();
         cyw43_arch_poll();
         tud_task();
         service_usb_mount_tracking();
@@ -565,6 +691,7 @@ int main()
     configure_switch_identity_from_radio();
     cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, false);
 
+    bt_debug_log_init();
     g_ds_output.reset();
     usb_descriptors_set_controller_persona(UsbControllerPersona::SwitchPro);
     usb_descriptors_set_audio_persona(UsbAudioPersona::HidOnly);
@@ -589,7 +716,18 @@ extern "C" uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id,
                                            uint8_t *buffer, uint16_t reqlen)
 {
     (void)instance;
-    if (buffer == nullptr || report_type != HID_REPORT_TYPE_INPUT) {
+    if (buffer == nullptr) {
+        return 0;
+    }
+    if (report_type == HID_REPORT_TYPE_FEATURE &&
+        report_id == kDebugLogReadFeatureReportId) {
+        std::memset(buffer, 0xff, reqlen);
+        const uint16_t out_len = static_cast<uint16_t>(bt_debug_log_read(
+            g_debug_log_read_offset, buffer, reqlen));
+        g_debug_log_read_offset += out_len;
+        return reqlen;
+    }
+    if (report_type != HID_REPORT_TYPE_INPUT) {
         return 0;
     }
 
@@ -627,6 +765,24 @@ extern "C" void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id,
                                        uint8_t const *buffer, uint16_t bufsize)
 {
     (void)instance;
+    if (report_type == HID_REPORT_TYPE_FEATURE &&
+        report_id == kDebugLogControlFeatureReportId) {
+        if (buffer != nullptr && bufsize >= 4u) {
+            g_debug_log_read_offset =
+                static_cast<uint32_t>(buffer[0]) |
+                (static_cast<uint32_t>(buffer[1]) << 8u) |
+                (static_cast<uint32_t>(buffer[2]) << 16u) |
+                (static_cast<uint32_t>(buffer[3]) << 24u);
+            if (g_debug_log_read_offset > bt_debug_log_size()) {
+                g_debug_log_read_offset = bt_debug_log_size();
+            }
+            if (bufsize >= 5u && buffer[4] == 1u) {
+                bt_debug_log_clear();
+                g_debug_log_read_offset = 0;
+            }
+        }
+        return;
+    }
     if (report_type != HID_REPORT_TYPE_OUTPUT || buffer == nullptr || bufsize == 0) {
         return;
     }
@@ -670,11 +826,14 @@ extern "C" void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id,
 
     const SwitchUsbOutputResult result =
         g_switch_usb.handle_output_report(report.data(), size);
+    forward_switch_output_to_bt_procon(report, size);
     if (result.has_switch2_console_addr) {
         switch2_wake_set_target_from_usb_pairing(
             result.switch2_console_addr_wire);
     }
-    apply_switch_feedback(result.feedback);
+    if (!bt_controller_is_switch_pro()) {
+        apply_switch_feedback(result.feedback);
+    }
     if (result.has_reply) {
         push_pending(result.reply);
     }

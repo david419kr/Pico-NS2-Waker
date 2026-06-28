@@ -12,12 +12,19 @@ enum class DualSenseBtChannel {
     Control,
 };
 
+enum class BtControllerKind {
+    Unknown,
+    DualSense,
+    SwitchPro,
+};
+
 using DualSenseBtDataCallback =
     void (*)(DualSenseBtChannel channel, const uint8_t *data, std::size_t size);
 
 void dualsense_bt_register_data_callback(DualSenseBtDataCallback callback);
 bool dualsense_bt_init();
 bool dualsense_bt_is_connected();
+BtControllerKind dualsense_bt_controller_kind();
 bool dualsense_bt_send_output_report(const DualSenseBtOutputReport &report);
 bool dualsense_bt_send_raw_output_report(const uint8_t *report, std::size_t size);
 bool dualsense_bt_disconnect();

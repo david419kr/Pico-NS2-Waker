@@ -1,14 +1,15 @@
 # DualSense on Switch
 
-Raspberry Pi Pico 2 W를 이용해 DualSense를 Nintendo Switch Pro Controller처럼 사용할 수 있게 해주는 펌웨어입니다.
+Raspberry Pi Pico 2 W를 이용해 DualSense 또는 Nintendo Switch Pro Controller 1을 Nintendo Switch Pro Controller처럼 사용할 수 있게 해주는 펌웨어입니다.
 
 Credit: 이 프로젝트는 [awalol/DS5Dongle](https://github.com/awalol/DS5Dongle)의 포크는 아니지만, 해당 프로젝트에서 큰 영감을 받았고 구현에도 많은 참고를 하였습니다.
 
 ## 할 수 있는 것
 
-- DualSense를 Bluetooth로 연결하고, Switch/PC에는 `Pro Controller`로 인식시킵니다.
+- DualSense 또는 Nintendo Switch Pro Controller 1을 Bluetooth로 연결하고, Switch/PC에는 `Pro Controller`로 인식시킵니다.
 - DualSense 터치패드 클릭은 Switch 캡처 버튼으로 동작합니다.
 - 모션 컨트롤과 진동을 지원합니다.
+- Nintendo Switch Pro Controller 1 입력/출력은 DualSense 버튼 변환 없이 그대로 전달합니다.
 - DualSense 3.5 mm 단자에 이어폰/헤드셋을 꽂으면 USB 오디오 출력으로 사용할 수 있습니다.
 - DualSense 마이크를 USB 마이크로 사용할 수 있습니다.
 - 최초 1회 설정 후 Nintendo Switch 2를 슬립 상태에서 깨울 수 있습니다. (Nintendo Switch 1 깨우기는 지원하지 않습니다.)
@@ -23,7 +24,7 @@ Credit: 이 프로젝트는 [awalol/DS5Dongle](https://github.com/awalol/DS5Dong
 ## 준비물
 
 - Raspberry Pi Pico 2 W
-- Sony DualSense 컨트롤러
+- Sony DualSense 컨트롤러 또는 Nintendo Switch Pro Controller 1
 - Pico 2 W를 Switch/PC에 연결할 USB 케이블
 - [최신 GitHub Release](https://github.com/david419kr/DS5onSwitch/releases/latest)의 펌웨어 파일
 
@@ -40,10 +41,10 @@ Credit: 이 프로젝트는 [awalol/DS5Dongle](https://github.com/awalol/DS5Dong
 
 1. Pico 2 W를 Switch나 PC에 연결합니다.
 2. Pico 2 W의 LED가 깜빡이면 컨트롤러 연결 대기 상태입니다.
-3. DualSense에서 PS + Create 버튼을 길게 눌러 페어링 모드로 진입합니다.
+3. DualSense에서는 PS + Create 버튼을, Switch Pro Controller에서는 SYNC 버튼을 길게 눌러 페어링 모드로 진입합니다.
 4. 연결되면 Pico 2 W의 LED가 켜진 상태로 유지되고, Switch/PC에는 `Pro Controller`가 나타납니다.
 
-한 번 페어링한 DualSense는 다음부터 전원을 켜면 다시 연결됩니다.
+한 번 페어링한 컨트롤러는 다음부터 전원을 켜면 다시 연결됩니다.
 
 ## Nintendo Switch 2 깨우기 설정
 
@@ -51,14 +52,14 @@ Switch 2 깨우기를 사용하기 전에 이 항목을 먼저 읽어 주세요.
 
 DS5onSwitch는 평소에는 Switch Pro Controller로 동작합니다. Switch 2 깨우기 설정을 할 때만 임시로 `Switch 2 Pro Controller`로 동작할 수 있습니다. 이 모드는 Switch 2에 "이 기기는 깨우기 신호를 받을 수 있는 컨트롤러"라고 등록시키기 위한 용도입니다. 일반 플레이용으로 구현한 모드가 아니며, 많은 기능이 생략되어 있어 실사용에는 적합하지 않습니다.
 
-1. DualSense를 Pico 2 W와 페어링하고, Pico 2 W를 Switch 2에 연결합니다.
-2. DualSense의 PS 버튼을 누른 상태에서 터치패드를 2번 클릭한 뒤 PS 버튼을 놓습니다.
+1. 컨트롤러를 Pico 2 W와 페어링하고, Pico 2 W를 Switch 2에 연결합니다.
+2. 등록 모드로 전환합니다. DualSense에서는 PS 버튼을 누른 상태에서 터치패드를 2번 클릭한 뒤 PS 버튼을 놓습니다. Switch Pro Controller에서는 Home 버튼을 누른 상태에서 Capture 버튼을 2번 누른 뒤 Home 버튼을 놓습니다.
 3. Pico 2 W가 USB에서 `Switch 2 Pro Controller`로 다시 연결됩니다. Switch 2가 이 컨트롤러를 한 번 인식할 때까지 기다립니다.
-4. PS 버튼을 누른 상태에서 터치패드를 1번 클릭한 뒤 PS 버튼을 놓아 일반 `Pro Controller` 모드로 돌아옵니다.
+4. 일반 모드로 돌아옵니다. DualSense에서는 PS 버튼을 누른 상태에서 터치패드를 1번 클릭한 뒤 PS 버튼을 놓습니다. Switch Pro Controller에서는 Home 버튼을 누른 상태에서 Capture 버튼을 1번 누른 뒤 Home 버튼을 놓습니다.
 5. Switch 2를 슬립 모드로 둡니다.
-6. DualSense의 PS 버튼을 눌러 Switch 2를 깨웁니다.
+6. 컨트롤러의 PS/Home 버튼을 눌러 Switch 2를 깨웁니다.
 
-깨우기 중에는 DualSense Bluetooth 연결이 한 번 끊길 수 있습니다. Switch 2가 켜진 뒤 DualSense의 PS 버튼을 한 번 더 눌러 DualSense를 다시 켜고 재연결해 주세요.
+깨우기 중에는 Bluetooth 컨트롤러 연결이 한 번 끊길 수 있습니다. Switch 2가 켜진 뒤 컨트롤러의 PS/Home 버튼을 한 번 더 눌러 다시 켜고 재연결해 주세요.
 
 ## 오디오
 
@@ -86,7 +87,7 @@ LED off 상태에서도, 길게 누르기 완료를 알리는 6회 점멸 같은
 ## LED 상태
 
 - 깜빡임: 컨트롤러 연결 대기 중
-- 켜짐: DualSense 연결됨
+- 켜짐: 컨트롤러 연결됨
 - 6회 점멸: 저장된 페어링 삭제 완료
 
 ## 직접 빌드
@@ -105,7 +106,7 @@ build\pico2_w\ds5onswitch.uf2
 
 ## 문제 해결
 
-- Switch/PC에 컨트롤러가 보이지 않으면 DualSense가 Pico 2 W에 연결되어 있는지 확인하세요. DualSense가 연결되지 않은 상태에서는 컨트롤러 장치를 노출하지 않습니다.
-- 다른 DualSense를 연결하고 싶으면 BOOTSEL을 2번 클릭해서 현재 연결을 끊은 뒤 새 컨트롤러를 페어링하세요.
+- Switch/PC에 컨트롤러가 보이지 않으면 DualSense 또는 Switch Pro Controller가 Pico 2 W에 연결되어 있는지 확인하세요. Bluetooth 컨트롤러가 연결되지 않은 상태에서는 컨트롤러 장치를 노출하지 않습니다.
+- 다른 컨트롤러를 연결하고 싶으면 BOOTSEL을 2번 클릭해서 현재 연결을 끊은 뒤 새 컨트롤러를 페어링하세요.
 - 자동 재연결이 꼬이면 BOOTSEL을 길게 눌러 저장된 페어링을 삭제한 뒤 다시 페어링하세요.
 - 오디오 출력이 보이지 않으면 DualSense의 3.5 mm 단자에 이어폰/헤드셋이 꽂혀 있는지 확인하세요.

@@ -2,6 +2,9 @@
 
 #include "ds5onswitch/types.h"
 
+#include <cstddef>
+#include <cstdint>
+
 namespace ds5onswitch {
 
 void pack_switch_stick12(uint8_t out[3], uint16_t x, uint16_t y);
@@ -13,5 +16,10 @@ void switch2_pro_button_bytes(uint32_t buttons, uint8_t out[3]);
 SwitchProInputReport build_switch_pro_input_report(const SwitchProState &state,
                                                    uint8_t packet_timer,
                                                    bool vibration_enabled);
+void write_switch_pro_report_buttons(SwitchReport &report, uint32_t buttons);
+bool parse_switch_pro_input_report(const uint8_t *report, std::size_t size,
+                                   SwitchProState &out);
+bool parse_switch_pro_bt_report(const uint8_t *report, std::size_t size,
+                                SwitchProState &out);
 
 } // namespace ds5onswitch
