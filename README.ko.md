@@ -2,6 +2,8 @@
 
 Raspberry Pi Pico 2 W를 이용해 DualSense 또는 Nintendo Switch Pro Controller 1을 Nintendo Switch Pro Controller처럼 사용할 수 있게 해주는 펌웨어입니다.
 
+Nintendo Switch Pro Controller 1을 사용할 때는 별도의 입력 변환을 하지 않으며, Pico 2 W를 통해 Pro Controller 그대로 전달하면서 Switch 2를 깨울 수 있게 합니다.
+
 Credit: 이 프로젝트는 [awalol/DS5Dongle](https://github.com/awalol/DS5Dongle)의 포크는 아니지만, 해당 프로젝트에서 큰 영감을 받았고 구현에도 많은 참고를 하였습니다.
 
 ## 할 수 있는 것

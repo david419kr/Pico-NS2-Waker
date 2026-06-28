@@ -4,6 +4,8 @@
 
 Firmware for using a DualSense or Nintendo Switch Pro Controller 1 as a Nintendo Switch Pro Controller with a Raspberry Pi Pico 2 W.
 
+When using a Switch Pro Controller 1, there is no separate input conversion; the Pico 2 W keeps it as Pro Controller passthrough while enabling Switch 2 wake.
+
 Credit: This project is not a fork of [awalol/DS5Dongle](https://github.com/awalol/DS5Dongle), but it is heavily inspired by it and references its implementation extensively.
 
 ## What It Does
