@@ -424,18 +424,48 @@ std::size_t build_steam_trackpad_command_output(uint8_t side, uint8_t command,
     return 4u;
 }
 
-std::size_t build_steam_power_off_output(uint8_t *out, std::size_t out_size)
+std::size_t build_steam_power_off_feature_command(uint8_t feature_report_id,
+                                                  uint8_t *out,
+                                                  std::size_t out_size)
 {
-    if (out == nullptr || out_size < 5u) {
+    const uint8_t payload[] = {'o', 'f', 'f', '!'};
+    const std::size_t len =
+        build_steam_feature_command(kSteamCmdPowerOff, payload,
+                                    static_cast<uint8_t>(sizeof(payload)),
+                                    out, out_size);
+    if (len != 0u) {
+        out[0] = feature_report_id;
+    }
+    return len;
+}
+
+std::size_t build_steam_power_off_legacy_feature_command(uint8_t *out,
+                                                         std::size_t out_size)
+{
+    if (out == nullptr || out_size < kSteamLegacyFeatureReportSize) {
         return 0;
     }
 
-    out[0] = kSteamOutPowerOff;
-    out[1] = 'o';
-    out[2] = 'f';
+    std::memset(out, 0, kSteamLegacyFeatureReportSize);
+    out[0] = kSteamFeatureReportCommandLegacy;
+    out[1] = kSteamCmdPowerOff;
+    return kSteamLegacyFeatureReportSize;
+}
+
+std::size_t build_steam_power_off_gatt_value(uint8_t *out,
+                                             std::size_t out_size)
+{
+    if (out == nullptr || out_size < kSteamPowerOffGattValueSize) {
+        return 0;
+    }
+
+    out[0] = kSteamCmdPowerOff;
+    out[1] = 4u;
+    out[2] = 'o';
     out[3] = 'f';
-    out[4] = '!';
-    return 5u;
+    out[4] = 'f';
+    out[5] = '!';
+    return kSteamPowerOffGattValueSize;
 }
 
 } // namespace ds5onswitch

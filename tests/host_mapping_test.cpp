@@ -438,12 +438,39 @@ void test_steam_output_builders()
     assert(out[1] == kSteamTrackpadHapticRight);
     assert(out[2] == 0xb0u && out[3] == 0x04u);
 
-    std::array<uint8_t, 5> power{};
+    std::array<uint8_t, kSteamLegacyFeatureReportSize> power{};
     const std::size_t power_len =
-        build_steam_power_off_output(power.data(), power.size());
-    assert(power_len == 5u);
-    assert(power[0] == kSteamOutPowerOff);
-    assert(std::memcmp(power.data() + 1u, "off!", 4) == 0);
+        build_steam_power_off_feature_command(kSteamFeatureReportCommand,
+                                              power.data(), power.size());
+    assert(power_len == 64u);
+    assert(power[0] == kSteamFeatureReportCommand);
+    assert(power[1] == kSteamCmdPowerOff);
+    assert(power[2] == 4u);
+    assert(std::memcmp(power.data() + 3u, "off!", 4) == 0);
+
+    const std::size_t fallback_len =
+        build_steam_power_off_feature_command(kSteamFeatureReportCommandFallback,
+                                              power.data(), power.size());
+    assert(fallback_len == 64u);
+    assert(power[0] == kSteamFeatureReportCommandFallback);
+    assert(power[1] == kSteamCmdPowerOff);
+    assert(power[2] == 4u);
+    assert(std::memcmp(power.data() + 3u, "off!", 4) == 0);
+
+    const std::size_t legacy_power_len =
+        build_steam_power_off_legacy_feature_command(power.data(),
+                                                     power.size());
+    assert(legacy_power_len == kSteamLegacyFeatureReportSize);
+    assert(power[0] == kSteamFeatureReportCommandLegacy);
+    assert(power[1] == kSteamCmdPowerOff);
+
+    std::array<uint8_t, kSteamPowerOffGattValueSize> gatt_power{};
+    const std::size_t gatt_power_len =
+        build_steam_power_off_gatt_value(gatt_power.data(), gatt_power.size());
+    assert(gatt_power_len == kSteamPowerOffGattValueSize);
+    assert(gatt_power[0] == kSteamCmdPowerOff);
+    assert(gatt_power[1] == 4u);
+    assert(std::memcmp(gatt_power.data() + 2u, "off!", 4) == 0);
 }
 
 void test_dualsense_bt_input_parser()

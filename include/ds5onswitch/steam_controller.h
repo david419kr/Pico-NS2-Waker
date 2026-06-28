@@ -14,12 +14,16 @@ constexpr uint16_t kSteamControllerBlePid = 0x1303;
 constexpr uint8_t kSteamControllerReportState = 0x45;
 constexpr uint8_t kSteamControllerReportStateLegacy = 0x42;
 constexpr std::size_t kSteamControllerStateReportSize = 46;
+constexpr std::size_t kSteamLegacyFeatureReportSize = 65;
+constexpr std::size_t kSteamPowerOffGattValueSize = 6;
 
+constexpr uint8_t kSteamFeatureReportCommandLegacy = 0x00;
 constexpr uint8_t kSteamFeatureReportCommand = 0x01;
 constexpr uint8_t kSteamFeatureReportCommandFallback = 0x02;
 constexpr uint8_t kSteamCmdClearDigitalMappings = 0x81;
 constexpr uint8_t kSteamCmdSetSettings = 0x87;
 constexpr uint8_t kSteamCmdTriggerHapticPulse = 0x8f;
+constexpr uint8_t kSteamCmdPowerOff = 0x9f;
 constexpr uint8_t kSteamSettingRightTrackpadMode = 0x07;
 constexpr uint8_t kSteamSettingLeftTrackpadMode = 0x08;
 constexpr uint8_t kSteamSettingImuMode = 0x30;
@@ -29,7 +33,6 @@ constexpr uint16_t kSteamImuModeRawAccelGyro = 0x0018;
 constexpr uint8_t kSteamOutHapticRumble = 0x80;
 constexpr uint8_t kSteamOutHapticPulse = 0x81;
 constexpr uint8_t kSteamOutHapticCommand = 0x82;
-constexpr uint8_t kSteamOutPowerOff = 0x9f;
 constexpr uint8_t kSteamTrackpadHapticLeft = 0x00;
 constexpr uint8_t kSteamTrackpadHapticRight = 0x01;
 constexpr uint8_t kSteamHapticCommandTick = 0x01;
@@ -117,6 +120,12 @@ std::size_t build_steam_trackpad_pulse_output(uint8_t side, uint16_t on_us,
 std::size_t build_steam_trackpad_command_output(uint8_t side, uint8_t command,
                                                 int8_t gain_db, uint8_t *out,
                                                 std::size_t out_size);
-std::size_t build_steam_power_off_output(uint8_t *out, std::size_t out_size);
+std::size_t build_steam_power_off_feature_command(uint8_t feature_report_id,
+                                                  uint8_t *out,
+                                                  std::size_t out_size);
+std::size_t build_steam_power_off_legacy_feature_command(uint8_t *out,
+                                                         std::size_t out_size);
+std::size_t build_steam_power_off_gatt_value(uint8_t *out,
+                                             std::size_t out_size);
 
 } // namespace ds5onswitch

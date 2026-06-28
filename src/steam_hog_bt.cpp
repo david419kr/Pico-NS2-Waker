@@ -6,6 +6,7 @@
 #include "ble/gatt-service/hids_client.h"
 #include "ble/gatt_client.h"
 #include "ble/sm.h"
+#include "bluetooth.h"
 #include "bluetooth_gatt.h"
 #include "btstack_event.h"
 #include "btstack_hid.h"
@@ -27,9 +28,15 @@ constexpr uint32_t kInitHeartbeatMs = 800;
 constexpr uint32_t kPulseIntervalMs = 20;
 constexpr uint16_t kHidsDescriptorStorageSize = 1024;
 constexpr std::size_t kTxQueueDepth = 12;
-constexpr std::size_t kTxPayloadMax = 63;
+constexpr std::size_t kTxPayloadMax = 64;
 constexpr uint8_t kAdvEventDirectInd = 0x01;
 constexpr uint16_t kValveCompanyId = 0x055d;
+constexpr uint8_t kValveGattServiceUuid[16] = {
+    0x10, 0x0f, 0x6c, 0x32, 0x17, 0x35, 0x43, 0x13,
+    0xb4, 0x02, 0x38, 0x56, 0x71, 0x31, 0xe5, 0xf3};
+constexpr uint8_t kValveGattReportCharacteristicUuid[16] = {
+    0x10, 0x0f, 0x6c, 0x34, 0x17, 0x35, 0x43, 0x13,
+    0xb4, 0x02, 0x38, 0x56, 0x71, 0x31, 0xe5, 0xf3};
 
 enum class SteamHogState : uint8_t {
     Idle,
@@ -38,6 +45,15 @@ enum class SteamHogState : uint8_t {
     HidsConnecting,
     Connected,
     Paused,
+};
+
+enum class ValveGattState : uint8_t {
+    Idle,
+    DiscoveringService,
+    DiscoveringCharacteristic,
+    Ready,
+    Unavailable,
+    WritingPowerOff,
 };
 
 struct TxReport {
@@ -66,6 +82,17 @@ uint32_t g_last_left_pulse_ms = 0;
 uint32_t g_last_right_pulse_ms = 0;
 bool g_stack_ready = false;
 bool g_write_ready = false;
+ValveGattState g_valve_gatt_state = ValveGattState::Idle;
+bool g_valve_service_found = false;
+bool g_valve_power_off_pending = false;
+gatt_client_service_t g_valve_service{};
+gatt_client_characteristic_t g_valve_report_characteristic{};
+uint16_t g_valve_report_value_handle = 0;
+uint16_t g_valve_report_properties = 0;
+uint8_t g_valve_power_off_value[kSteamPowerOffGattValueSize]{};
+
+void valve_gatt_packet_handler(uint8_t packet_type, uint16_t channel,
+                               uint8_t *packet, uint16_t size);
 
 uint32_t now_ms()
 {
@@ -75,6 +102,128 @@ uint32_t now_ms()
 bool state_is_connected()
 {
     return g_state == SteamHogState::Connected && g_hids_cid != 0;
+}
+
+bool can_write_hid_report()
+{
+    return (g_state == SteamHogState::Connected ||
+            g_state == SteamHogState::Paused) &&
+           g_hids_cid != 0;
+}
+
+bool steam_link_open_for_gatt()
+{
+    return (g_state == SteamHogState::Connected ||
+            g_state == SteamHogState::Paused) &&
+           g_con_handle != HCI_CON_HANDLE_INVALID;
+}
+
+bool valve_gatt_busy()
+{
+    return g_valve_gatt_state == ValveGattState::DiscoveringService ||
+           g_valve_gatt_state == ValveGattState::DiscoveringCharacteristic ||
+           g_valve_gatt_state == ValveGattState::WritingPowerOff;
+}
+
+void reset_valve_gatt()
+{
+    g_valve_gatt_state = ValveGattState::Idle;
+    g_valve_service_found = false;
+    g_valve_power_off_pending = false;
+    std::memset(&g_valve_service, 0, sizeof(g_valve_service));
+    std::memset(&g_valve_report_characteristic, 0,
+                sizeof(g_valve_report_characteristic));
+    g_valve_report_value_handle = 0;
+    g_valve_report_properties = 0;
+    std::memset(g_valve_power_off_value, 0, sizeof(g_valve_power_off_value));
+}
+
+bool start_valve_gatt_discovery()
+{
+    if (!steam_link_open_for_gatt() || valve_gatt_busy() ||
+        g_valve_gatt_state == ValveGattState::Ready ||
+        g_valve_gatt_state == ValveGattState::Unavailable) {
+        return false;
+    }
+
+    g_valve_service_found = false;
+    std::memset(&g_valve_service, 0, sizeof(g_valve_service));
+    std::memset(&g_valve_report_characteristic, 0,
+                sizeof(g_valve_report_characteristic));
+    g_valve_report_value_handle = 0;
+    g_valve_report_properties = 0;
+    g_valve_gatt_state = ValveGattState::DiscoveringService;
+    const uint8_t status = gatt_client_discover_primary_services_by_uuid128(
+        valve_gatt_packet_handler, g_con_handle, kValveGattServiceUuid);
+    if (status != ERROR_CODE_SUCCESS) {
+        std::printf("[SC-BLE] Valve GATT service discovery failed status=0x%02x\n",
+                    status);
+        g_valve_gatt_state = ValveGattState::Idle;
+        return false;
+    }
+    return true;
+}
+
+bool try_valve_power_off_write()
+{
+    if (!steam_link_open_for_gatt() ||
+        g_valve_gatt_state != ValveGattState::Ready ||
+        g_valve_report_value_handle == 0) {
+        return false;
+    }
+
+    const std::size_t len = build_steam_power_off_gatt_value(
+        g_valve_power_off_value, sizeof(g_valve_power_off_value));
+    if (len == 0) {
+        return false;
+    }
+
+    uint8_t status = ERROR_CODE_UNSUPPORTED_FEATURE_OR_PARAMETER_VALUE;
+    if ((g_valve_report_properties & ATT_PROPERTY_WRITE) != 0u) {
+        g_valve_gatt_state = ValveGattState::WritingPowerOff;
+        status = gatt_client_write_value_of_characteristic(
+            valve_gatt_packet_handler, g_con_handle, g_valve_report_value_handle,
+            static_cast<uint16_t>(len), g_valve_power_off_value);
+        if (status == ERROR_CODE_SUCCESS) {
+            g_valve_power_off_pending = false;
+            std::printf("[SC-BLE] Valve GATT power-off write request queued\n");
+            return true;
+        }
+        g_valve_gatt_state = ValveGattState::Ready;
+    }
+
+    if ((g_valve_report_properties & ATT_PROPERTY_WRITE_WITHOUT_RESPONSE) != 0u) {
+        status = gatt_client_write_value_of_characteristic_without_response(
+            g_con_handle, g_valve_report_value_handle, static_cast<uint16_t>(len),
+            g_valve_power_off_value);
+        if (status == ERROR_CODE_SUCCESS) {
+            g_valve_power_off_pending = false;
+            std::printf("[SC-BLE] Valve GATT power-off write command sent\n");
+            return true;
+        }
+    }
+
+    std::printf("[SC-BLE] Valve GATT power-off write failed status=0x%02x props=0x%04x\n",
+                status, g_valve_report_properties);
+    return false;
+}
+
+bool try_pending_valve_power_off()
+{
+    if (!g_valve_power_off_pending || !steam_link_open_for_gatt()) {
+        return false;
+    }
+    if (g_valve_gatt_state == ValveGattState::Ready) {
+        return try_valve_power_off_write();
+    }
+    if (g_valve_gatt_state == ValveGattState::Idle) {
+        return start_valve_gatt_discovery();
+    }
+    if (g_valve_gatt_state == ValveGattState::Unavailable) {
+        g_valve_power_off_pending = false;
+        return false;
+    }
+    return valve_gatt_busy();
 }
 
 bool ascii_equal_ci(char a, char b)
@@ -237,7 +386,10 @@ bool enqueue_hid_report(const uint8_t *report, std::size_t report_len,
 
 void try_tx()
 {
-    while (state_is_connected() && g_write_ready && g_tx_count != 0u) {
+    if (valve_gatt_busy()) {
+        return;
+    }
+    while (can_write_hid_report() && g_write_ready && g_tx_count != 0u) {
         TxReport &front = g_tx_queue[g_tx_head];
         const uint8_t status = hids_client_send_write_report(
             g_hids_cid, front.report_id, front.report_type, front.payload,
@@ -320,6 +472,7 @@ void enqueue_pulse(uint8_t side, uint8_t pulse, uint32_t now_ms,
 
 void clear_runtime_state(bool schedule_scan)
 {
+    reset_valve_gatt();
     g_con_handle = HCI_CON_HANDLE_INVALID;
     g_hids_cid = 0;
     g_write_ready = false;
@@ -371,6 +524,88 @@ void connect_to_advertiser(uint8_t *packet)
     if (status != ERROR_CODE_SUCCESS) {
         std::printf("[SC-BLE] gap_connect failed status=0x%02x\n", status);
         clear_runtime_state(true);
+    }
+}
+
+void valve_gatt_packet_handler(uint8_t packet_type, uint16_t channel,
+                               uint8_t *packet, uint16_t size)
+{
+    (void)channel;
+    (void)size;
+    if (packet_type != HCI_EVENT_PACKET) {
+        return;
+    }
+
+    switch (hci_event_packet_get_type(packet)) {
+    case GATT_EVENT_SERVICE_QUERY_RESULT:
+        if (g_valve_gatt_state == ValveGattState::DiscoveringService) {
+            gatt_event_service_query_result_get_service(packet,
+                                                        &g_valve_service);
+            g_valve_service_found = true;
+        }
+        break;
+
+    case GATT_EVENT_CHARACTERISTIC_QUERY_RESULT:
+        if (g_valve_gatt_state == ValveGattState::DiscoveringCharacteristic) {
+            gatt_event_characteristic_query_result_get_characteristic(
+                packet, &g_valve_report_characteristic);
+            g_valve_report_value_handle =
+                g_valve_report_characteristic.value_handle;
+            g_valve_report_properties = g_valve_report_characteristic.properties;
+        }
+        break;
+
+    case GATT_EVENT_QUERY_COMPLETE: {
+        const uint8_t status = gatt_event_query_complete_get_att_status(packet);
+        if (g_valve_gatt_state == ValveGattState::DiscoveringService) {
+            if (status != ATT_ERROR_SUCCESS || !g_valve_service_found) {
+                std::printf("[SC-BLE] Valve GATT service not found status=0x%02x\n",
+                            status);
+                g_valve_gatt_state = ValveGattState::Unavailable;
+                g_valve_power_off_pending = false;
+                break;
+            }
+            g_valve_gatt_state = ValveGattState::DiscoveringCharacteristic;
+            const uint8_t discover_status =
+                gatt_client_discover_characteristics_for_service_by_uuid128(
+                    valve_gatt_packet_handler, g_con_handle, &g_valve_service,
+                    kValveGattReportCharacteristicUuid);
+            if (discover_status != ERROR_CODE_SUCCESS) {
+                std::printf("[SC-BLE] Valve GATT characteristic discovery failed status=0x%02x\n",
+                            discover_status);
+                g_valve_gatt_state = ValveGattState::Idle;
+            }
+            break;
+        }
+
+        if (g_valve_gatt_state == ValveGattState::DiscoveringCharacteristic) {
+            if (status == ATT_ERROR_SUCCESS && g_valve_report_value_handle != 0) {
+                g_valve_gatt_state = ValveGattState::Ready;
+                std::printf("[SC-BLE] Valve GATT report handle=0x%04x props=0x%04x\n",
+                            g_valve_report_value_handle,
+                            g_valve_report_properties);
+                (void)try_pending_valve_power_off();
+            } else {
+                std::printf("[SC-BLE] Valve GATT report characteristic not found status=0x%02x\n",
+                            status);
+                g_valve_gatt_state = ValveGattState::Unavailable;
+                g_valve_power_off_pending = false;
+            }
+            break;
+        }
+
+        if (g_valve_gatt_state == ValveGattState::WritingPowerOff) {
+            g_valve_gatt_state = ValveGattState::Ready;
+            std::printf("[SC-BLE] Valve GATT power-off write complete status=0x%02x\n",
+                        status);
+            try_tx();
+            break;
+        }
+        break;
+    }
+
+    default:
+        break;
     }
 }
 
@@ -432,6 +667,7 @@ void hids_packet_handler(uint8_t packet_type, uint16_t channel,
         if (gattservice_subevent_hid_report_written_get_hids_cid(packet) ==
             g_hids_cid) {
             g_write_ready = true;
+            (void)try_pending_valve_power_off();
             try_tx();
         }
         break;
@@ -519,6 +755,7 @@ void hci_packet_handler(uint8_t packet_type, uint16_t channel,
             }
             g_con_handle =
                 gap_subevent_le_connection_complete_get_connection_handle(packet);
+            reset_valve_gatt();
             g_state = SteamHogState::HidsConnecting;
             g_state_ms = now_ms();
             const uint8_t hids_status = hids_client_connect(
@@ -576,6 +813,7 @@ void steam_hog_bt_stack_init()
 void steam_hog_bt_service(uint32_t now_ms)
 {
     if (g_state == SteamHogState::Paused) {
+        (void)try_pending_valve_power_off();
         return;
     }
 
@@ -590,6 +828,15 @@ void steam_hog_bt_service(uint32_t now_ms)
                 (void)gap_disconnect(g_con_handle);
             }
             clear_runtime_state(true);
+        }
+    }
+
+    if (state_is_connected()) {
+        if (g_valve_power_off_pending) {
+            (void)try_pending_valve_power_off();
+        } else if (g_valve_gatt_state == ValveGattState::Idle &&
+                   g_write_ready && g_tx_count == 0u) {
+            (void)start_valve_gatt_discovery();
         }
     }
 
@@ -659,22 +906,19 @@ bool steam_hog_bt_disconnect()
 
 bool steam_hog_bt_power_off()
 {
-    if (!state_is_connected()) {
+    if (!steam_link_open_for_gatt()) {
         return false;
     }
 
-    bool queued = false;
-    uint8_t report[5]{};
-    const std::size_t len = build_steam_power_off_output(report, sizeof(report));
-    if (len == 0u) {
+    g_tx_head = 0;
+    g_tx_count = 0;
+    g_valve_power_off_pending = true;
+    const bool started = try_pending_valve_power_off();
+    if (!started && g_valve_gatt_state == ValveGattState::Unavailable) {
         return false;
     }
-    for (uint8_t i = 0; i < 3u; ++i) {
-        queued = enqueue_hid_report(report, len, HID_REPORT_TYPE_OUTPUT) ||
-                 queued;
-    }
-    try_tx();
-    return queued;
+    return started || g_valve_power_off_pending ||
+           g_valve_gatt_state == ValveGattState::WritingPowerOff;
 }
 
 void steam_hog_bt_pause_for_switch2_wake()
@@ -686,9 +930,9 @@ void steam_hog_bt_pause_for_switch2_wake()
     std::printf("[SC-BLE] Pause for Switch 2 wake\n");
     if (g_state == SteamHogState::Scanning) {
         gap_stop_scan();
+    } else if (g_state == SteamHogState::Connecting) {
+        (void)gap_connect_cancel();
     }
-    (void)steam_hog_bt_power_off();
-    (void)steam_hog_bt_disconnect();
     g_state = SteamHogState::Paused;
 }
 
@@ -699,6 +943,17 @@ void steam_hog_bt_resume_after_switch2_wake()
     }
 
     std::printf("[SC-BLE] Resume after Switch 2 wake\n");
+    if (g_hids_cid != 0) {
+        g_state = SteamHogState::Connected;
+        g_next_heartbeat_ms = now_ms();
+        try_tx();
+        return;
+    }
+    if (g_con_handle != HCI_CON_HANDLE_INVALID) {
+        g_state = SteamHogState::HidsConnecting;
+        g_state_ms = now_ms();
+        return;
+    }
     clear_runtime_state(false);
     g_state = SteamHogState::Idle;
     g_next_scan_ms = now_ms() + kReconnectDelayMs;

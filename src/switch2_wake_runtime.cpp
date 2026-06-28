@@ -20,9 +20,11 @@ namespace {
 constexpr uint32_t kSwitch2WakeTlvTag = 0x5332574bu; // ASCII 'S2WK'
 constexpr uint32_t kAdvertiseDurationMs = 20000;
 constexpr uint32_t kCooldownMs = 30000;
+constexpr uint32_t kControllerPowerOffLeadMs = 500;
 
 enum class WakeState : uint8_t {
     Idle,
+    PoweringOffController,
     Advertising,
     Cooldown,
 };
@@ -119,12 +121,20 @@ void stop_advertising()
     }
 }
 
-void disconnect_classic_controller_for_wake()
+bool disconnect_classic_controller_for_wake()
 {
     std::printf("[S2WK] Wake requested, power off/disconnect controller "
                 "before advertise\n");
     (void)dualsense_bt_power_off();
+    const bool steam_power_off_queued = steam_hog_bt_power_off();
     (void)dualsense_bt_disconnect();
+    return steam_power_off_queued;
+}
+
+void start_wake_advertising_after_controller_pause()
+{
+    steam_hog_bt_pause_for_switch2_wake();
+    start_advertising();
 }
 
 void finish_attempt(bool apply_cooldown)
@@ -235,9 +245,13 @@ bool switch2_wake_request()
 
     std::printf("[S2WK] Wake requested\n");
     dualsense_bt_pause_for_switch2_wake();
-    steam_hog_bt_pause_for_switch2_wake();
-    disconnect_classic_controller_for_wake();
-    start_advertising();
+    const bool steam_power_off_queued = disconnect_classic_controller_for_wake();
+    if (steam_power_off_queued) {
+        g_state = WakeState::PoweringOffController;
+        g_state_ms = now;
+    } else {
+        start_wake_advertising_after_controller_pause();
+    }
     return true;
 }
 
@@ -255,6 +269,12 @@ void switch2_wake_service(bool usb_mounted)
 
     switch (g_state) {
     case WakeState::Idle:
+        break;
+
+    case WakeState::PoweringOffController:
+        if (now - g_state_ms >= kControllerPowerOffLeadMs) {
+            start_wake_advertising_after_controller_pause();
+        }
         break;
 
     case WakeState::Advertising:
