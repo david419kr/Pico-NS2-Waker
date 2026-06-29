@@ -472,7 +472,7 @@ void test_steam_output_builders()
     assert(out[0] == kSteamOutHapticCommand);
     assert(out[1] == kSteamTrackpadHapticRight);
     assert(out[2] == kSteamHapticCommandTick);
-    assert(out[3] == 0xd3u);
+    assert(out[3] == 0x02u); // kSteamTrackpadTouchGainDb (2) as uint8_t
 
     const std::size_t feature_pulse_len =
         build_steam_trackpad_feature_pulse_command(
@@ -485,7 +485,7 @@ void test_steam_output_builders()
     assert(buf[3] == kSteamTrackpadHapticRight);
     assert(buf[4] == 0x88u && buf[5] == 0x13u);
     assert(buf[8] == 0x01u && buf[9] == 0x00u);
-    assert(buf[10] == 0x28u && buf[11] == 0x00u);
+    assert(buf[10] == 0x24u && buf[11] == 0x00u); // kSteamTrackpadClickPulseGainDb (36)
     assert(buf[12] == kSteamHapticPulseHighPriority);
 
     std::array<uint8_t, kSteamLegacyFeatureReportSize> power{};
@@ -552,8 +552,9 @@ void test_steam_trackpad_haptic_policy()
     action = update_steam_trackpad_haptics(input, state, 60);
     assert(action.right_click && !action.right_tick);
 
+    // While the right pad is held clicked, dragging must NOT emit a drag tick.
     action = update_steam_trackpad_haptics(input, state, 90);
-    assert(!action.right_click && action.right_tick);
+    assert(!action.right_click && !action.right_tick);
 
     input.buttons = 0;
     action = update_steam_trackpad_haptics(input, state, 120);
@@ -571,12 +572,48 @@ void test_steam_trackpad_haptic_policy()
     action = update_steam_trackpad_haptics(input, state, 180);
     assert(action.left_click && !action.left_tick);
 
+    // While the left pad is held clicked, dragging must NOT emit a drag tick;
+    // only the press/release click haptic fires for a clicked pad.
     action = update_steam_trackpad_haptics(input, state, 210);
     assert(!action.left_click && !action.left_tick);
 
     input.buttons = 0;
     action = update_steam_trackpad_haptics(input, state, 240);
     assert(action.left_click && !action.left_tick);
+
+    // Left pad drag with only the touch bit (no click) also produces ticks,
+    // mirroring the right pad: drag haptics are symmetric across both pads.
+    SteamTrackpadHapticState left_drag{};
+    SteamControllerInput left_input{};
+    left_input.buttons = kSteamBtnLeftPadTouch;
+    left_input.left_pad_x = 1000;
+    left_input.left_pad_y = 1000;
+    action = update_steam_trackpad_haptics(left_input, left_drag, 300);
+    assert(!action.left_tick && !action.left_click);
+
+    left_input.left_pad_x = 3000;
+    left_input.left_pad_y = 1100;
+    action = update_steam_trackpad_haptics(left_input, left_drag, 325);
+    assert(action.left_tick && !action.left_click);
+
+    left_input.left_pad_x = 3050;
+    action = update_steam_trackpad_haptics(left_input, left_drag, 335);
+    assert(!action.left_tick && !action.left_click);
+
+    // Clicked drag on the right pad: movement large enough to exceed the tick
+    // threshold, but the held click suppresses drag ticks entirely.
+    SteamTrackpadHapticState clicked_drag{};
+    SteamControllerInput clicked_input{};
+    clicked_input.buttons = kSteamBtnRightPadTouch | kSteamBtnRightPadClick;
+    clicked_input.right_pad_x = 1000;
+    clicked_input.right_pad_y = 1000;
+    action = update_steam_trackpad_haptics(clicked_input, clicked_drag, 400);
+    assert(action.right_click && !action.right_tick);
+
+    clicked_input.right_pad_x = 6000;
+    clicked_input.right_pad_y = 6000;
+    action = update_steam_trackpad_haptics(clicked_input, clicked_drag, 430);
+    assert(!action.right_click && !action.right_tick);
 }
 
 void test_xbox_controller_input_parser_and_mapping()

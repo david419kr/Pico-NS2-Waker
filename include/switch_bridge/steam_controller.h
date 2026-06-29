@@ -39,9 +39,15 @@ constexpr uint8_t kSteamHapticCommandTick = 0x01;
 constexpr uint8_t kSteamHapticCommandClick = 0x02;
 constexpr uint8_t kSteamHapticPulseHighPriority = 0x01;
 constexpr uint16_t kSteamTrackpadClickPulseUs = 5000;
-constexpr int8_t kSteamTrackpadTouchGainDb = -45;
-constexpr int8_t kSteamTrackpadClickCommandGainDb = 9;
-constexpr int16_t kSteamTrackpadClickPulseGainDb = 40;
+// Drag/touch tick gain. SteamlessController used -45 dB on PC, which is
+// effectively inaudible on this firmware path, so the drag haptic was not
+// felt. Raised to a felt-but-light level; this is the perceptual tuning knob
+// (more negative = softer, less negative = stronger).
+constexpr int8_t kSteamTrackpadTouchGainDb = 2;
+// Strong-click gains reduced to ~60% amplitude (-4.4 dB) per request:
+// 9 -> 5 dB and 40 -> 36 dB each give ~63% linear amplitude.
+constexpr int8_t kSteamTrackpadClickCommandGainDb = 5;
+constexpr int16_t kSteamTrackpadClickPulseGainDb = 36;
 
 enum SteamControllerButton : uint32_t {
     kSteamBtnA = 0x00000001u,

@@ -450,18 +450,29 @@ SteamTrackpadHapticAction update_steam_trackpad_haptics(
         state.last_right_pulse_ms = now_ms;
     }
 
-    // Matches SteamlessController's policy for this firmware path:
-    // left pad is click-D-pad, right pad is touch/mouse-like right stick.
-    // SteamlessController gates the touch tick on the touch bit only
-    // (rawRightTouching = BTN_TP_RT); keep that exact condition for 1:1 parity.
+    // Drag/touch ticks on BOTH pads (no left/right distinction). The touch
+    // bit alone is unreliable on this BT HOG path during a slow drag, so a pad
+    // counts as touched when the touch bit or non-zero pad force is present.
+    // A hard click is intentionally excluded: while a pad is clicked, dragging
+    // must NOT emit drag ticks (only the press/release click haptic fires).
+    const bool left_touch_haptic =
+        !raw_left_click &&
+        ((input.buttons & kSteamBtnLeftPadTouch) != 0u ||
+         input.left_pad_force != 0);
     const bool right_touch_haptic =
-        (input.buttons & kSteamBtnRightPadTouch) != 0u;
+        !raw_right_click &&
+        ((input.buttons & kSteamBtnRightPadTouch) != 0u ||
+         input.right_pad_force != 0);
+
+    action.left_tick = update_touch_tick(
+        left_touch_haptic, input.left_pad_x, input.left_pad_y,
+        action.left_click, state.prev_left_touch, state.prev_left_x,
+        state.prev_left_y, state.last_left_pulse_ms, now_ms);
     action.right_tick = update_touch_tick(
         right_touch_haptic, input.right_pad_x, input.right_pad_y,
         action.right_click, state.prev_right_touch, state.prev_right_x,
         state.prev_right_y, state.last_right_pulse_ms, now_ms);
 
-    state.prev_left_touch = false;
     return action;
 }
 
