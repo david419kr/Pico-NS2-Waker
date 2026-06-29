@@ -13,6 +13,7 @@
 #include "switch_bridge/persona_combo_filter.h"
 #include "switch_bridge/steam_controller.h"
 #include "switch_bridge/steam_hog_bt.h"
+#include "switch_bridge/switch2_auto_registration.h"
 #include "switch_bridge/switch_identity.h"
 #include "switch_bridge/switch_pro.h"
 #include "switch_bridge/switch_usb.h"
@@ -63,6 +64,7 @@ bool g_auto_wake_armed = false;
 uint32_t g_controller_connected_since_ms = 0;
 uint8_t g_switch2_report_counter = 0;
 PersonaComboFilter g_persona_combo_filter;
+Switch2AutoRegistration g_switch2_auto_registration;
 SwitchReport g_procon_passthrough_report{};
 bool g_procon_passthrough_valid = false;
 uint32_t g_debug_log_read_offset = 0;
@@ -452,6 +454,7 @@ void __not_in_flash_func(on_classic_hid_data)(ClassicHidChannel channel,
 
     dualsense_audio_update_status(input);
     if (usb_descriptors_controller_persona() == UsbControllerPersona::SwitchPro &&
+        !g_switch2_auto_registration.blocks_audio_reconnect() &&
         bt_controller_is_dualsense() &&
         dualsense_audio_desired_persona() != g_usb_persona) {
         g_usb_persona = dualsense_audio_desired_persona();
@@ -703,6 +706,40 @@ bool __not_in_flash_func(usb_sleep_candidate)(uint32_t now)
            now - g_usb_unmounted_since_ms >= kUsbUnmountDebounceMs;
 }
 
+void __not_in_flash_func(service_switch2_auto_registration)()
+{
+    uint8_t ctrl_addr_wire[6]{};
+    controller_addr_wire(ctrl_addr_wire);
+
+    const bool switch2_persona_active =
+        usb_descriptors_controller_persona() ==
+        UsbControllerPersona::Switch2ProRegistration;
+
+    Switch2AutoRegistrationInputs inputs{};
+    inputs.now_ms = board_millis();
+    inputs.usb_mounted = tud_mounted();
+    inputs.controller_connected = bt_controller_connected();
+    inputs.debug_usb_mode = g_debug_usb_mode;
+    inputs.usb_reconnect_pending = g_usb_reconnect_pending;
+    inputs.switch2_persona_active = switch2_persona_active;
+    inputs.registration_complete =
+        switch2_wake_registration_complete(ctrl_addr_wire);
+
+    const Switch2AutoRegistrationAction action =
+        g_switch2_auto_registration.service(inputs);
+    switch (action) {
+    case Switch2AutoRegistrationAction::EnterSwitch2RegistrationPersona:
+        select_switch2_pro_persona();
+        break;
+    case Switch2AutoRegistrationAction::RevertToSwitchProPersona:
+        select_switch_pro_persona();
+        break;
+    case Switch2AutoRegistrationAction::None:
+    default:
+        break;
+    }
+}
+
 void __not_in_flash_func(service_switch2_wake_policy)()
 {
     const uint32_t now = board_millis();
@@ -836,12 +873,17 @@ void __not_in_flash_func(service_switch2_registration)()
         uint8_t console_addr[6]{};
         if (procon2_extract_console_addr_wire(request, n, console_addr)) {
             switch2_wake_set_target_from_usb_pairing(console_addr);
+            g_switch2_auto_registration.note_switch_console_seen(board_millis());
         }
 
         uint8_t ctrl_addr_wire[6]{};
         controller_addr_wire(ctrl_addr_wire);
         const Procon2Reply reply =
             procon2_build_reply(request, n, ctrl_addr_wire);
+        if (reply.pairing_finalized) {
+            (void)switch2_wake_mark_registration_complete(ctrl_addr_wire);
+            g_switch2_auto_registration.note_pairing_finalized();
+        }
         if (reply.valid) {
             (void)tud_vendor_write(reply.data.data(),
                                    static_cast<uint32_t>(reply.len));
@@ -966,6 +1008,7 @@ void __no_inline_not_in_flash_func(app_loop)()
         steam_hog_bt_service(board_millis());
         service_classic_hid_connection();
         service_steam_connection();
+        service_switch2_auto_registration();
         service_switch2_wake_policy();
         dualsense_audio_loop(g_ds_output, g_ds_output_sequence);
         service_dualsense_output();
@@ -1129,11 +1172,16 @@ extern "C" void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id,
         if (procon2_extract_console_addr_wire(report.data(), size,
                                               console_addr)) {
             switch2_wake_set_target_from_usb_pairing(console_addr);
+            g_switch2_auto_registration.note_switch_console_seen(board_millis());
         }
         uint8_t ctrl_addr_wire[6]{};
         controller_addr_wire(ctrl_addr_wire);
         const Procon2Reply reply =
             procon2_build_reply(report.data(), size, ctrl_addr_wire);
+        if (reply.pairing_finalized) {
+            (void)switch2_wake_mark_registration_complete(ctrl_addr_wire);
+            g_switch2_auto_registration.note_pairing_finalized();
+        }
         if (reply.valid) {
             SwitchReport hid_reply{};
             // HID output reports cap at the 64-byte SwitchReport. The few
@@ -1154,6 +1202,7 @@ extern "C" void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id,
     if (result.has_switch2_console_addr) {
         switch2_wake_set_target_from_usb_pairing(
             result.switch2_console_addr_wire);
+        g_switch2_auto_registration.note_switch_console_seen(board_millis());
     }
     if (steam_hog_bt_is_connected()) {
         (void)steam_hog_bt_send_switch_feedback(result.feedback);

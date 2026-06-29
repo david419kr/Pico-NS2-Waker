@@ -42,6 +42,10 @@ struct Procon2Reply {
     // Legacy test/diagnostic flag. This should remain false now that 0x15/0x02
     // is computed from the exchanged LTK material instead of zero-filled.
     bool is_crypto_placeholder = false;
+    bool business_card_sent = false;
+    bool ltk_exchanged = false;
+    bool ltk_confirmed = false;
+    bool pairing_finalized = false;
     std::size_t len = 0;
     std::array<uint8_t, kProcon2ReplyMaxLen> data{};
 };

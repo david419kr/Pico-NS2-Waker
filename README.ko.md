@@ -10,9 +10,9 @@ Credits:
 ## 할 수 있는 것
 
 - 각 컨트롤러를 `Nintendo Switch Pro Controller`로 인식시킵니다.
-- 최초 1회 설정 후 Nintendo Switch 2를 슬립 상태에서 깨울 수 있습니다.
+- Nintendo Switch 2를 슬립 상태에서 깨울 수 있습니다.
 - 모션 컨트롤과 진동을 지원합니다. 단, Xbox 컨트롤러는 모션 컨트롤을 지원하지 않습니다.
-- DualSense 3.5 mm 단자와 마이크용 USB 오디오 경로가 있습니다.
+- DualSense의 3.5 mm 단자와 마이크를 이용 가능합니다.
 
 ## 준비물
 
@@ -39,38 +39,18 @@ Credits:
 
 한 번 페어링한 컨트롤러는 다음부터 전원을 켜면 다시 연결됩니다.
 
-## Nintendo Switch 2 깨우기 설정
+## Nintendo Switch 2 깨우기
 
-Switch 2 깨우기를 사용하기 전에 이 항목을 먼저 읽어 주세요. 이 설정은 Switch 2의 컨트롤러 설정에서 이 컨트롤러를 삭제하지 않는 한 최초 1회만 필요합니다.
+Pico 2 W를 처음 연결시에는 Switch 2 를 켠 상태로 연결하여 등록하여야 합니다.
 
-컨트롤러는 평소에는 스위치 프로콘 1로 동작합니다. Switch 2 깨우기 설정을 할 때만 임시로 `스위치 프로콘 2`로 인식시킵니다. 이 모드는 Switch 2에 "이 기기는 깨우기 신호를 받을 수 있는 컨트롤러"라고 등록시키기 위한 용도입니다. 일반 플레이용으로 구현한 모드가 아니며, 많은 기능이 생략되어 있어 실사용에는 적합하지 않습니다.
-
-1. 컨트롤러를 Pico 2 W와 페어링하고, Pico 2 W를 Switch 2에 연결합니다.
-2. 등록 모드로 전환합니다.
-
-| 컨트롤러 | 조작 |
-| --- | --- |
-| DualSense | PS 버튼을 누른 상태에서 터치패드를 2번 클릭한 뒤 PS 버튼을 놓습니다 |
-| DualShock 4 | PS 버튼을 누른 상태에서 터치패드를 2번 클릭한 뒤 PS 버튼을 놓습니다 |
-| Switch Pro Controller 1 | Home 버튼을 누른 상태에서 Capture 버튼을 2번 누른 뒤 Home 버튼을 놓습니다 |
-| Steam Controller | Steam 버튼을 누른 상태에서 QAM(・・・) 버튼을 2번 누른 뒤 Steam 버튼을 놓습니다 |
-| Xbox Controller | Guide 버튼을 누른 상태에서 Back/View 버튼을 2번 누른 뒤 Guide 버튼을 놓습니다 |
-
-3. `Switch 2 Pro Controller`로 다시 연결됩니다. Switch 2가 이 컨트롤러를 한 번 인식할 때까지 기다립니다.
-4. 일반 모드로 돌아옵니다.
-
-| 컨트롤러 | 조작 |
-| --- | --- |
-| DualSense | PS 버튼을 누른 상태에서 터치패드를 1번 클릭한 뒤 PS 버튼을 놓습니다 |
-| DualShock 4 | PS 버튼을 누른 상태에서 터치패드를 1번 클릭한 뒤 PS 버튼을 놓습니다 |
-| Switch Pro Controller 1 | Home 버튼을 누른 상태에서 Capture 버튼을 1번 누른 뒤 Home 버튼을 놓습니다 |
-| Steam Controller | Steam 버튼을 누른 상태에서 QAM(・・・) 버튼을 1번 누른 뒤 Steam 버튼을 놓습니다 |
-| Xbox Controller | Guide 버튼을 누른 상태에서 Back/View 버튼을 1번 누른 뒤 Guide 버튼을 놓습니다 |
-
-5. Switch 2를 슬립 모드로 둡니다.
-6. 컨트롤러의 PS/Home/Steam/Guide 버튼을 눌러 Switch 2를 깨웁니다.
+1. Switch2를 켭니다. Pico 2 W를 Switch 2에 연결하고, 컨트롤러를 Pico 2 W에 연결합니다.
+2. Switch 2에 컨트롤러가 등록되어 조작 가능해질 때 까지 기다립니다.
+3. Switch 2를 슬립 모드로 둡니다.
+4. 이후, 컨트롤러의 PS/Home/Steam/Guide 버튼을 눌러 Switch 2를 깨울 수 있습니다.
 
 깨우기 중에는 Bluetooth 컨트롤러 연결이 한 번 끊깁니다. Switch 2가 켜진 뒤 컨트롤러의 PS/Home/Steam/Guide 버튼을 한 번 더 눌러 다시 켜고 재연결해 주세요.
+
+Switch 1 깨우기는 지원하지 않습니다.
 
 ## 각 컨트롤러 별 특수 키매핑
 
@@ -130,3 +110,32 @@ build\pico2_w\switchbridge.uf2
 - 다른 컨트롤러를 연결하고 싶으면 BOOTSEL을 2번 클릭해서 현재 연결을 끊은 뒤 새 컨트롤러를 페어링하세요.
 - 자동 재연결이 꼬이면 BOOTSEL을 길게 눌러 저장된 페어링을 삭제한 뒤 다시 페어링하세요.
 - DualSense 사용시 오디오 출력이 보이지 않으면 DualSense의 3.5 mm 단자에 이어폰/헤드셋이 꽂혀 있는지 확인하세요.
+
+### Switch 2 깨우기가 동작하지 않을 때
+
+일반 사용에서는 수동 설정이 필요 없습니다. 그래도 컨트롤러를 페어링하고 Switch 2에 연결한 뒤 Switch 2 깨우기가 동작하지 않는다거나, 수동으로 컨트롤러 페어링을 삭제하였을 경우, 문제 해결용으로 아래 수동 등록을 시도해 보세요.
+
+1. 컨트롤러를 Pico 2 W와 페어링하고, Pico 2 W를 Switch 2에 연결합니다.
+2. 수동 등록 모드로 전환합니다.
+
+| 컨트롤러 | 조작 |
+| --- | --- |
+| DualSense | PS 버튼을 누른 상태에서 터치패드를 2번 클릭한 뒤 PS 버튼을 놓습니다 |
+| DualShock 4 | PS 버튼을 누른 상태에서 터치패드를 2번 클릭한 뒤 PS 버튼을 놓습니다 |
+| Switch Pro Controller 1 | Home 버튼을 누른 상태에서 Capture 버튼을 2번 누른 뒤 Home 버튼을 놓습니다 |
+| Steam Controller | Steam 버튼을 누른 상태에서 QAM(・・・) 버튼을 2번 누른 뒤 Steam 버튼을 놓습니다 |
+| Xbox Controller | Guide 버튼을 누른 상태에서 Back/View 버튼을 2번 누른 뒤 Guide 버튼을 놓습니다 |
+
+3. `Switch 2 Pro Controller`로 다시 연결됩니다. Switch 2가 이 컨트롤러를 한 번 인식할 때까지 기다립니다.
+4. 일반 모드로 돌아옵니다.
+
+| 컨트롤러 | 조작 |
+| --- | --- |
+| DualSense | PS 버튼을 누른 상태에서 터치패드를 1번 클릭한 뒤 PS 버튼을 놓습니다 |
+| DualShock 4 | PS 버튼을 누른 상태에서 터치패드를 1번 클릭한 뒤 PS 버튼을 놓습니다 |
+| Switch Pro Controller 1 | Home 버튼을 누른 상태에서 Capture 버튼을 1번 누른 뒤 Home 버튼을 놓습니다 |
+| Steam Controller | Steam 버튼을 누른 상태에서 QAM(・・・) 버튼을 1번 누른 뒤 Steam 버튼을 놓습니다 |
+| Xbox Controller | Guide 버튼을 누른 상태에서 Back/View 버튼을 1번 누른 뒤 Guide 버튼을 놓습니다 |
+
+5. Switch 2를 슬립 모드로 둡니다.
+6. 컨트롤러의 PS/Home/Steam/Guide 버튼을 눌러 Switch 2를 깨웁니다.

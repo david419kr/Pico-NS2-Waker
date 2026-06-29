@@ -7,6 +7,7 @@
 #include "switch_bridge/persona_combo_filter.h"
 #include "switch_bridge/procon2_handshake.h"
 #include "switch_bridge/steam_controller.h"
+#include "switch_bridge/switch2_auto_registration.h"
 #include "switch_bridge/switch_identity.h"
 #include "switch_bridge/switch_pro.h"
 #include "switch_bridge/switch_usb.h"
@@ -1229,6 +1230,7 @@ void test_switch_identity_runtime()
 void test_procon2_handshake_replies()
 {
     const uint8_t ctrl_addr_wire[] = {0x56, 0x34, 0x12, 0x67, 0xcf, 0x2c};
+    procon2_handshake_reset();
 
     // Non-handshake input yields no reply.
     const uint8_t junk[] = {0x09, 0x23, 0x00};
@@ -1254,6 +1256,10 @@ void test_procon2_handshake_replies()
         procon2_build_reply(card_req, sizeof(card_req), ctrl_addr_wire);
     assert(card_reply.valid);
     assert(!card_reply.is_crypto_placeholder);
+    assert(card_reply.business_card_sent);
+    assert(!card_reply.ltk_exchanged);
+    assert(!card_reply.ltk_confirmed);
+    assert(!card_reply.pairing_finalized);
     assert(card_reply.data[0] == kProcon2ReportPairing);
     assert(std::memcmp(&card_reply.data[11], ctrl_addr_wire, 6) == 0);
 
@@ -1272,6 +1278,10 @@ void test_procon2_handshake_replies()
         procon2_build_reply(exchange_ltk_req, sizeof(exchange_ltk_req), ctrl_addr_wire);
     assert(ltk_reply.valid);
     assert(!ltk_reply.is_crypto_placeholder);
+    assert(!ltk_reply.business_card_sent);
+    assert(ltk_reply.ltk_exchanged);
+    assert(!ltk_reply.ltk_confirmed);
+    assert(!ltk_reply.pairing_finalized);
     const uint8_t fixed_b1[] = {
         0x5c, 0xf6, 0xee, 0x79, 0x2c, 0xdf, 0x05, 0xe1,
         0xba, 0x2b, 0x63, 0x25, 0xc4, 0x1a, 0x5f, 0x10,
@@ -1287,11 +1297,24 @@ void test_procon2_handshake_replies()
         procon2_build_reply(confirm_ltk_req, sizeof(confirm_ltk_req), ctrl_addr_wire);
     assert(confirm_reply.valid);
     assert(!confirm_reply.is_crypto_placeholder);
+    assert(!confirm_reply.business_card_sent);
+    assert(!confirm_reply.ltk_exchanged);
+    assert(confirm_reply.ltk_confirmed);
+    assert(!confirm_reply.pairing_finalized);
     const uint8_t expected_b2[] = {
         0xef, 0x49, 0xae, 0x18, 0xaa, 0x99, 0xc2, 0x6f,
         0x98, 0x93, 0x49, 0xc9, 0x3f, 0xca, 0x60, 0xcd,
     };
     assert(std::memcmp(&confirm_reply.data[9], expected_b2, sizeof(expected_b2)) == 0);
+
+    const uint8_t finalize_req[] = {
+        0x15, 0x91, 0x00, 0x03, 0x00, 0x01, 0x00, 0x00, 0x00,
+    };
+    Procon2Reply finalize_reply =
+        procon2_build_reply(finalize_req, sizeof(finalize_req), ctrl_addr_wire);
+    assert(finalize_reply.valid);
+    assert(finalize_reply.len == 9u);
+    assert(finalize_reply.pairing_finalized);
 }
 
 void test_switch2_pro_button_bytes()
@@ -1446,6 +1469,82 @@ void test_procon2_extended_handshake()
     assert(ack.data[1] == 0x01u);
 }
 
+void test_switch2_auto_registration_policy()
+{
+    Switch2AutoRegistration policy;
+    Switch2AutoRegistrationInputs in{};
+    in.now_ms = 1000;
+    in.usb_mounted = true;
+    in.controller_connected = true;
+
+    assert(policy.service(in) == Switch2AutoRegistrationAction::None);
+    assert(!policy.active());
+
+    policy.note_switch_console_seen(in.now_ms);
+    assert(policy.service(in) == Switch2AutoRegistrationAction::None);
+    assert(policy.active());
+    assert(policy.blocks_audio_reconnect());
+
+    in.now_ms += 249;
+    assert(policy.service(in) == Switch2AutoRegistrationAction::None);
+
+    in.now_ms += 1;
+    assert(policy.service(in) ==
+           Switch2AutoRegistrationAction::EnterSwitch2RegistrationPersona);
+
+    in.switch2_persona_active = true;
+    in.usb_mounted = false;
+    in.usb_reconnect_pending = true;
+    in.now_ms += 100;
+    assert(policy.service(in) == Switch2AutoRegistrationAction::None);
+
+    in.usb_mounted = true;
+    in.usb_reconnect_pending = false;
+    in.now_ms += 100;
+    assert(policy.service(in) == Switch2AutoRegistrationAction::None);
+
+    policy.note_pairing_finalized();
+    in.registration_complete = true;
+    in.now_ms += 1;
+    assert(policy.service(in) == Switch2AutoRegistrationAction::None);
+    in.now_ms += 250;
+    assert(policy.service(in) ==
+           Switch2AutoRegistrationAction::RevertToSwitchProPersona);
+    assert(!policy.active());
+
+    // Cooldown prevents immediate re-entry after a completed/failed attempt.
+    in.switch2_persona_active = false;
+    in.registration_complete = false;
+    policy.note_switch_console_seen(in.now_ms);
+    in.now_ms += 1000;
+    assert(policy.service(in) == Switch2AutoRegistrationAction::None);
+    assert(!policy.active());
+
+    // A persisted registration marker suppresses auto registration entirely.
+    in.registration_complete = true;
+    in.now_ms += 10u * 60u * 1000u;
+    policy.note_switch_console_seen(in.now_ms);
+    assert(policy.service(in) == Switch2AutoRegistrationAction::None);
+    assert(!policy.active());
+
+    // If enumeration never comes back after the persona switch, revert safely.
+    policy.reset();
+    in.registration_complete = false;
+    in.usb_mounted = true;
+    in.usb_reconnect_pending = false;
+    in.switch2_persona_active = false;
+    policy.note_switch_console_seen(in.now_ms);
+    (void)policy.service(in);
+    in.now_ms += 250;
+    assert(policy.service(in) ==
+           Switch2AutoRegistrationAction::EnterSwitch2RegistrationPersona);
+    in.usb_mounted = false;
+    in.usb_reconnect_pending = false;
+    in.now_ms += 3000;
+    assert(policy.service(in) ==
+           Switch2AutoRegistrationAction::RevertToSwitchProPersona);
+}
+
 } // namespace
 
 int main()
@@ -1472,5 +1571,6 @@ int main()
     test_procon2_extended_handshake();
     test_switch_identity_runtime();
     test_procon2_handshake_replies();
+    test_switch2_auto_registration_policy();
     return 0;
 }

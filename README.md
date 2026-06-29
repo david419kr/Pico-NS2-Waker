@@ -12,9 +12,9 @@ This project is heavily inspired by [awalol/DS5Dongle](https://github.com/awalol
 ## What It Does
 
 - Makes each controller appear as a `Nintendo Switch Pro Controller`.
-- Can wake a Nintendo Switch 2 from sleep after a one-time setup.
+- Can wake a Nintendo Switch 2 from sleep.
 - Supports motion controls and rumble. Xbox controllers do not support motion controls.
-- Includes a DualSense USB audio path for the 3.5 mm jack and microphone.
+- Lets you use the DualSense 3.5 mm jack and microphone.
 
 ## Requirements
 
@@ -41,38 +41,18 @@ If this firmware is already installed, you can click BOOTSEL 4 times to enter US
 
 After pairing once, the same controller will reconnect when powered on.
 
-## Nintendo Switch 2 Wake Setup
+## Nintendo Switch 2 Wake
 
-Read this section before using Switch 2 wake. This setup is only required once unless you delete this controller from the Switch 2 controller settings.
+When you connect the Pico 2 W for the first time, you must connect it with the Switch 2 powered on so the controller gets registered.
 
-The controller normally works as a Switch Pro Controller 1. Only during Switch 2 wake setup, it temporarily appears as a `Switch 2 Pro Controller`. This mode exists to register the device with the Switch 2 as a controller that can receive wake signals. It is not implemented for normal gameplay, and many functions are omitted.
-
-1. Pair the controller with the Pico 2 W and connect the Pico 2 W to the Switch 2.
-2. Enter registration mode.
-
-| Controller | Action |
-| --- | --- |
-| DualSense | Hold PS, click the touchpad twice, then release PS |
-| DualShock 4 | Hold PS, click the touchpad twice, then release PS |
-| Switch Pro Controller 1 | Hold Home, press Capture twice, then release Home |
-| Steam Controller | Hold Steam, press the QAM (...) button twice, then release Steam |
-| Xbox Controller | Hold Guide, press Back/View twice, then release Guide |
-
-3. It reconnects as a `Switch 2 Pro Controller`. Wait until the Switch 2 recognizes it once.
-4. Return to normal mode.
-
-| Controller | Action |
-| --- | --- |
-| DualSense | Hold PS, click the touchpad once, then release PS |
-| DualShock 4 | Hold PS, click the touchpad once, then release PS |
-| Switch Pro Controller 1 | Hold Home, press Capture once, then release Home |
-| Steam Controller | Hold Steam, press the QAM (...) button once, then release Steam |
-| Xbox Controller | Hold Guide, press Back/View once, then release Guide |
-
-5. Put the Switch 2 into sleep mode.
-6. Press PS/Home/Steam/Guide on the controller to wake the Switch 2.
+1. Turn on the Switch 2. Connect the Pico 2 W to the Switch 2, then connect the controller to the Pico 2 W.
+2. Wait until the controller is registered on the Switch 2 and becomes usable.
+3. Put the Switch 2 into sleep mode.
+4. After that, press PS/Home/Steam/Guide on the controller to wake the Switch 2.
 
 During wake, the Bluetooth controller connection disconnects once. After the Switch 2 wakes up, press PS/Home/Steam/Guide again to turn the controller back on and reconnect it.
+
+Switch 1 wake is not supported.
 
 ## Controller-Specific Mappings
 
@@ -132,3 +112,32 @@ build\pico2_w\switchbridge.uf2
 - To connect a different controller, click BOOTSEL 2 times to disconnect the current controller, then pair the new controller.
 - If automatic reconnection gets stuck, long-press BOOTSEL to delete saved pairings, then pair again.
 - If audio output does not appear while using DualSense, make sure earphones or a headset are plugged into the DualSense 3.5 mm jack.
+
+### If Switch 2 wake does not work
+
+In normal use, no manual setup is required. If the Switch 2 still does not wake after pairing and connecting to the Switch 2, or if you have manually deleted the controller pairing, try forcing the wake registration manually as a troubleshooting step.
+
+1. Pair the controller with the Pico 2 W and connect the Pico 2 W to the Switch 2.
+2. Enter manual registration mode.
+
+| Controller | Action |
+| --- | --- |
+| DualSense | Hold PS, click the touchpad twice, then release PS |
+| DualShock 4 | Hold PS, click the touchpad twice, then release PS |
+| Switch Pro Controller 1 | Hold Home, press Capture twice, then release Home |
+| Steam Controller | Hold Steam, press the QAM (...) button twice, then release Steam |
+| Xbox Controller | Hold Guide, press Back/View twice, then release Guide |
+
+3. It reconnects as a `Switch 2 Pro Controller`. Wait until the Switch 2 recognizes it once.
+4. Return to normal mode.
+
+| Controller | Action |
+| --- | --- |
+| DualSense | Hold PS, click the touchpad once, then release PS |
+| DualShock 4 | Hold PS, click the touchpad once, then release PS |
+| Switch Pro Controller 1 | Hold Home, press Capture once, then release Home |
+| Steam Controller | Hold Steam, press the QAM (...) button once, then release Steam |
+| Xbox Controller | Hold Guide, press Back/View once, then release Guide |
+
+5. Put the Switch 2 into sleep mode.
+6. Press PS/Home/Steam/Guide on the controller to wake the Switch 2.

@@ -45,6 +45,7 @@ constexpr uint8_t kProcon2FixedB1Wire[16] = {
 
 uint8_t g_ltk_wire[16]{};
 bool g_ltk_ready = false;
+bool g_ltk_confirmed = false;
 uint8_t g_feature_flags = kFeaturesDefault;
 uint8_t g_feature_mask = 0u;
 uint8_t g_active_report_id = kReportCommon;
@@ -372,6 +373,7 @@ void procon2_handshake_reset()
 {
     std::memset(g_ltk_wire, 0, sizeof(g_ltk_wire));
     g_ltk_ready = false;
+    g_ltk_confirmed = false;
     g_feature_flags = kFeaturesDefault;
     g_feature_mask = 0u;
     g_active_report_id = kReportCommon;
@@ -590,6 +592,7 @@ Procon2Reply procon2_build_reply(const uint8_t *request, std::size_t size,
             if (controller_addr_wire != nullptr) {
                 std::memcpy(&out[11], controller_addr_wire, 6);
             }
+            reply.business_card_sent = true;
             response_len = 17u;
             break;
         case 0x04u:
@@ -598,6 +601,7 @@ Procon2Reply procon2_build_reply(const uint8_t *request, std::size_t size,
             if (has_payload(request, size, 17u) &&
                 request[8] == kPayloadRequestMarker) {
                 compute_ltk_from_a1_wire(&request[9]);
+                reply.ltk_exchanged = true;
             }
             std::memcpy(&out[9], kProcon2FixedB1Wire,
                         sizeof(kProcon2FixedB1Wire));
@@ -608,6 +612,8 @@ Procon2Reply procon2_build_reply(const uint8_t *request, std::size_t size,
             if (g_ltk_ready && has_payload(request, size, 17u) &&
                 request[8] == kPayloadRequestMarker) {
                 compute_b2_wire(&request[9], &out[9]);
+                g_ltk_confirmed = true;
+                reply.ltk_confirmed = true;
             } else {
                 std::memset(&out[9], 0x00u, 16u);
                 reply.is_crypto_placeholder = true;
@@ -616,6 +622,7 @@ Procon2Reply procon2_build_reply(const uint8_t *request, std::size_t size,
             break;
         case 0x03u:
             // Finalise pairing: header + reply marker only.
+            reply.pairing_finalized = g_ltk_confirmed;
             response_len = 9u;
             break;
         default:

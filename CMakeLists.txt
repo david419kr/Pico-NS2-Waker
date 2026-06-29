@@ -37,6 +37,7 @@ add_library(switchbridge_core
     src/persona_combo_filter.cpp
     src/procon2_handshake.cpp
     src/steam_controller.cpp
+    src/switch2_auto_registration.cpp
     src/switch2_wake.cpp
     src/switch_identity.cpp
     src/switch_pro.cpp
