@@ -30,4 +30,9 @@ bool steam_hog_bt_power_off();
 void steam_hog_bt_pause_for_switch2_wake();
 void steam_hog_bt_resume_after_switch2_wake();
 
+// Suppress the continuous LE HID discovery scan. The active 100%-duty scan
+// starves the coexisting Classic ACL audio link, so it is turned off while a
+// Classic controller (e.g. DualSense) is connected.
+void steam_hog_bt_set_scan_suppressed(bool suppressed);
+
 } // namespace switchbridge

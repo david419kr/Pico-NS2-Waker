@@ -1,6 +1,8 @@
 [CmdletBinding()]
 param(
     [switch]$Clear,
+    [switch]$Counters,
+    [switch]$ResetCounters,
     [string]$OutBin = ""
 )
 
@@ -104,7 +106,7 @@ function Open-SwitchBridgeHid {
     throw "SwitchBridge HID device not found. Connect the Pico while the firmware is running."
 }
 
-function Set-LogOffset([Microsoft.Win32.SafeHandles.SafeFileHandle]$Handle, [uint32]$Offset, [bool]$DoClear) {
+function Set-LogOffset([Microsoft.Win32.SafeHandles.SafeFileHandle]$Handle, [uint32]$Offset, [bool]$DoClear, [bool]$DoResetCounters = $false) {
     $buf = New-Object byte[] 64
     $buf[0] = 0x7f
     $buf[1] = [byte]($Offset -band 0xff)
@@ -112,6 +114,7 @@ function Set-LogOffset([Microsoft.Win32.SafeHandles.SafeFileHandle]$Handle, [uin
     $buf[3] = [byte](($Offset -shr 16) -band 0xff)
     $buf[4] = [byte](($Offset -shr 24) -band 0xff)
     $buf[5] = if ($DoClear) { 1 } else { 0 }
+    $buf[6] = if ($DoResetCounters) { 1 } else { 0 }
     if (-not [HidNative]::HidD_SetFeature($Handle, $buf, $buf.Length)) {
         throw "HidD_SetFeature failed: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())"
     }
@@ -132,6 +135,17 @@ function Read-LogRaw([Microsoft.Win32.SafeHandles.SafeFileHandle]$Handle) {
         $pos += $copy
     }
     $raw
+}
+
+function Read-FeaturePayload([Microsoft.Win32.SafeHandles.SafeFileHandle]$Handle, [byte]$ReportId) {
+    $buf = New-Object byte[] 64
+    $buf[0] = $ReportId
+    if (-not [HidNative]::HidD_GetFeature($Handle, $buf, $buf.Length)) {
+        throw "HidD_GetFeature failed: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())"
+    }
+    $payload = New-Object byte[] 63
+    [Array]::Copy($buf, 1, $payload, 0, $payload.Length)
+    $payload
 }
 
 function U16([byte[]]$b, [int]$o) { [BitConverter]::ToUInt16($b, $o) }
@@ -155,8 +169,34 @@ $kinds = @{
 $handle = Open-SwitchBridgeHid
 try {
     if ($Clear) {
-        Set-LogOffset $handle 0 $true
+        Set-LogOffset $handle 0 $true $false
         Write-Host "BT debug log cleared."
+        return
+    }
+    if ($ResetCounters) {
+        Set-LogOffset $handle 0 $false $true
+        Write-Host "Audio/BT debug counters reset."
+        if (-not $Counters) { return }
+    }
+    if ($Counters) {
+        $audio = Read-FeaturePayload $handle 0x7c
+        $classic = Read-FeaturePayload $handle 0x7d
+        "Audio counters ({0}) stream={1} mic={2} micq={3}" -f `
+            ([Text.Encoding]::ASCII.GetString($audio, 0, 4)), $audio[5], $audio[6], $audio[7]
+        "  loop={0} max_gap_ms={1} spk_ok={2} spk_fail={3} spk_encode_fail={4}" -f `
+            (U32 $audio 8), (U32 $audio 12), (U32 $audio 16), (U32 $audio 20), (U32 $audio 24)
+        "  mic_packets={0} mic_queue_drop={1} mic_decode_ok={2} mic_decode_fail={3}" -f `
+            (U32 $audio 28), (U32 $audio 32), (U32 $audio 36), (U32 $audio 40)
+        "  mic_write_ok={0} mic_write_fail={1} mic_write_bytes={2}" -f `
+            (U32 $audio 44), (U32 $audio 48), (U32 $audio 52)
+        "Classic HID counters ({0}) high_water={1} last_l2cap=0x{2:x2} kind={3}" -f `
+            ([Text.Encoding]::ASCII.GetString($classic, 0, 4)), $classic[5], $classic[6], $classic[7]
+        "  enqueue_ok={0} enqueue_fail={1} not_ready={2} invalid={3}" -f `
+            (U32 $classic 8), (U32 $classic 12), (U32 $classic 16), (U32 $classic 20)
+        "  report31={0} report32={1} report36={2} other={3}" -f `
+            (U32 $classic 24), (U32 $classic 28), (U32 $classic 32), (U32 $classic 36)
+        "  l2cap_ok={0} l2cap_fail={1} can_send_events={2}" -f `
+            (U32 $classic 40), (U32 $classic 44), (U32 $classic 48)
         return
     }
 

@@ -75,6 +75,8 @@ constexpr uint32_t kUsbUnmountDebounceMs = 1000;
 constexpr uint32_t kHomeWakePendingWindowMs = 3000;
 constexpr uint8_t kDebugLogReadFeatureReportId = 0x7e;
 constexpr uint8_t kDebugLogControlFeatureReportId = 0x7f;
+constexpr uint8_t kDebugAudioCountersFeatureReportId = 0x7c;
+constexpr uint8_t kDebugClassicCountersFeatureReportId = 0x7d;
 
 void configure_switch_identity_from_radio()
 {
@@ -542,6 +544,7 @@ void __not_in_flash_func(service_classic_hid_connection)()
     static BtControllerKind last_kind = BtControllerKind::Unknown;
     const bool connected = classic_hid_is_connected();
     const BtControllerKind kind = classic_hid_controller_kind();
+    steam_hog_bt_set_scan_suppressed(connected);
     if (connected == was_connected && kind == last_kind) {
         return;
     }
@@ -1034,6 +1037,16 @@ extern "C" uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id,
         g_debug_log_read_offset += out_len;
         return reqlen;
     }
+    if (kEnableBtDebugTools && report_type == HID_REPORT_TYPE_FEATURE &&
+        report_id == kDebugAudioCountersFeatureReportId) {
+        return static_cast<uint16_t>(
+            dualsense_audio_debug_counters_report(buffer, reqlen));
+    }
+    if (kEnableBtDebugTools && report_type == HID_REPORT_TYPE_FEATURE &&
+        report_id == kDebugClassicCountersFeatureReportId) {
+        return static_cast<uint16_t>(
+            classic_hid_debug_counters_report(buffer, reqlen));
+    }
     if (report_type != HID_REPORT_TYPE_INPUT) {
         return 0;
     }
@@ -1086,6 +1099,10 @@ extern "C" void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id,
             if (bufsize >= 5u && buffer[4] == 1u) {
                 bt_debug_log_clear();
                 g_debug_log_read_offset = 0;
+            }
+            if (bufsize >= 6u && buffer[5] == 1u) {
+                dualsense_audio_reset_debug_counters();
+                classic_hid_reset_debug_counters();
             }
         }
         return;

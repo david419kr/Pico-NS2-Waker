@@ -20,5 +20,8 @@ UsbAudioPersona dualsense_audio_desired_persona();
 bool dualsense_audio_speaker_streaming();
 bool dualsense_audio_speaker_active();
 void dualsense_audio_loop(const DualSenseOutputState &state, uint8_t &sequence);
+std::size_t dualsense_audio_debug_counters_report(uint8_t *out,
+                                                  std::size_t len);
+void dualsense_audio_reset_debug_counters();
 
 } // namespace switchbridge

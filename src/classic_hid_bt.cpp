@@ -64,6 +64,22 @@ struct SendElement {
     uint16_t len;
 };
 
+struct ClassicHidDebugCounters {
+    uint32_t enqueue_ok;
+    uint32_t enqueue_fail;
+    uint32_t enqueue_not_ready;
+    uint32_t enqueue_invalid;
+    uint32_t report_31;
+    uint32_t report_32;
+    uint32_t report_36;
+    uint32_t report_other;
+    uint32_t l2cap_send_ok;
+    uint32_t l2cap_send_fail;
+    uint32_t can_send_events;
+    uint8_t fifo_high_water;
+    uint8_t last_l2cap_status;
+};
+
 btstack_packet_callback_registration_t g_hci_callback{};
 btstack_packet_callback_registration_t g_l2cap_callback{};
 bd_addr_t g_current_addr{};
@@ -100,6 +116,7 @@ uint16_t g_sdp_attribute_len = 0;
 uint8_t g_sdp_previous_attribute_byte = 0;
 uint16_t g_sdp_vendor_id = 0;
 uint16_t g_sdp_product_id = 0;
+ClassicHidDebugCounters g_debug_counters{};
 
 void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type,
                                              uint16_t channel,
@@ -118,6 +135,36 @@ bool is_gamepad_class(uint32_t class_of_device)
 uint32_t now_ms()
 {
     return to_ms_since_boot(get_absolute_time());
+}
+
+void count_report_bucket(uint8_t report_id)
+{
+    switch (report_id) {
+    case 0x31u:
+        ++g_debug_counters.report_31;
+        break;
+    case 0x32u:
+        ++g_debug_counters.report_32;
+        break;
+    case 0x36u:
+        ++g_debug_counters.report_36;
+        break;
+    default:
+        ++g_debug_counters.report_other;
+        break;
+    }
+}
+
+void put_u32_le(uint8_t *out, std::size_t len, std::size_t offset,
+                uint32_t value)
+{
+    if (out == nullptr || offset + 4u > len) {
+        return;
+    }
+    out[offset] = static_cast<uint8_t>(value);
+    out[offset + 1u] = static_cast<uint8_t>(value >> 8u);
+    out[offset + 2u] = static_cast<uint8_t>(value >> 16u);
+    out[offset + 3u] = static_cast<uint8_t>(value >> 24u);
 }
 
 bool is_controller_candidate(uint32_t class_of_device, BtControllerKind hint)
@@ -1125,6 +1172,7 @@ void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type,
     }
 
     case L2CAP_EVENT_CAN_SEND_NOW: {
+        ++g_debug_counters.can_send_events;
         SendElement element{};
         if (queue_try_remove(&g_send_fifo, &element)) {
             uint8_t packet[kManualHidPacketSize]{};
@@ -1134,8 +1182,12 @@ void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type,
                 static_cast<uint16_t>(element.len + 1u);
             const uint8_t status =
                 l2cap_send(g_hid_interrupt_cid, packet, packet_len);
+            g_debug_counters.last_l2cap_status = status;
             if (status != ERROR_CODE_SUCCESS) {
+                ++g_debug_counters.l2cap_send_fail;
                 std::printf("[BT] L2CAP send failed status=0x%02x\n", status);
+            } else {
+                ++g_debug_counters.l2cap_send_ok;
             }
         }
         if (!queue_is_empty(&g_send_fifo) && g_hid_interrupt_cid != 0) {
@@ -1215,25 +1267,79 @@ bool __not_in_flash_func(classic_hid_send_raw_output_report)(
     const uint8_t *report, std::size_t size)
 {
     if (g_hid_interrupt_cid == 0) {
+        ++g_debug_counters.enqueue_fail;
+        ++g_debug_counters.enqueue_not_ready;
         return false;
     }
     if (report == nullptr || size == 0 || size > kSendPacketSize) {
+        ++g_debug_counters.enqueue_fail;
+        ++g_debug_counters.enqueue_invalid;
         return false;
     }
+    count_report_bucket(report[0]);
 
     SendElement element{};
     element.len = static_cast<uint16_t>(size);
     std::memcpy(element.data, report, size);
 
     if (!queue_try_add(&g_send_fifo, &element)) {
+        ++g_debug_counters.enqueue_fail;
         return false;
     }
+    ++g_debug_counters.enqueue_ok;
+    const uint8_t fifo_level = static_cast<uint8_t>(queue_get_level(&g_send_fifo));
+    if (fifo_level > g_debug_counters.fifo_high_water) {
+        g_debug_counters.fifo_high_water = fifo_level;
+    }
 
-    if (queue_get_level(&g_send_fifo) == 1) {
+    if (fifo_level == 1) {
         l2cap_request_can_send_now_event(g_hid_interrupt_cid);
     }
 
     return true;
+}
+
+std::size_t classic_hid_debug_counters_report(uint8_t *out, std::size_t len)
+{
+    if (out == nullptr || len == 0) {
+        return 0;
+    }
+    std::memset(out, 0, len);
+    if (len >= 4u) {
+        out[0] = 'C';
+        out[1] = 'H';
+        out[2] = 'D';
+        out[3] = '1';
+    }
+    if (len > 4u) {
+        out[4] = 1;
+    }
+    if (len > 5u) {
+        out[5] = g_debug_counters.fifo_high_water;
+    }
+    if (len > 6u) {
+        out[6] = g_debug_counters.last_l2cap_status;
+    }
+    if (len > 7u) {
+        out[7] = static_cast<uint8_t>(g_controller_kind);
+    }
+    put_u32_le(out, len, 8, g_debug_counters.enqueue_ok);
+    put_u32_le(out, len, 12, g_debug_counters.enqueue_fail);
+    put_u32_le(out, len, 16, g_debug_counters.enqueue_not_ready);
+    put_u32_le(out, len, 20, g_debug_counters.enqueue_invalid);
+    put_u32_le(out, len, 24, g_debug_counters.report_31);
+    put_u32_le(out, len, 28, g_debug_counters.report_32);
+    put_u32_le(out, len, 32, g_debug_counters.report_36);
+    put_u32_le(out, len, 36, g_debug_counters.report_other);
+    put_u32_le(out, len, 40, g_debug_counters.l2cap_send_ok);
+    put_u32_le(out, len, 44, g_debug_counters.l2cap_send_fail);
+    put_u32_le(out, len, 48, g_debug_counters.can_send_events);
+    return len;
+}
+
+void classic_hid_reset_debug_counters()
+{
+    g_debug_counters = {};
 }
 
 bool __not_in_flash_func(classic_hid_power_off_active_controller)()

@@ -39,6 +39,21 @@ struct MicPacket {
     std::array<uint8_t, kMicOpusBytes> data{};
 };
 
+struct AudioDebugCounters {
+    uint32_t loop_calls;
+    uint32_t max_loop_gap_ms;
+    uint32_t speaker_send_ok;
+    uint32_t speaker_send_fail;
+    uint32_t speaker_encode_fail;
+    uint32_t mic_packets;
+    uint32_t mic_queue_drop;
+    uint32_t mic_decode_ok;
+    uint32_t mic_decode_fail;
+    uint32_t mic_write_ok;
+    uint32_t mic_write_fail;
+    uint32_t mic_write_bytes;
+};
+
 bool g_connected = false;
 bool g_headphones_connected = false;
 bool g_mic_connected = false;
@@ -62,6 +77,8 @@ OpusDecoder *g_decoder = nullptr;
 uint8_t g_mute[2] = {0, 0};
 int16_t g_volume[2] = {0, 0};
 float g_speaker_gain = kSpeakerPreGain;
+AudioDebugCounters g_debug_counters{};
+uint32_t g_last_audio_loop_ms = 0;
 
 bool __not_in_flash_func(mic_enabled)()
 {
@@ -103,6 +120,7 @@ void __not_in_flash_func(push_mic_packet)(const uint8_t *data)
     if (g_mic_count == kMicQueueDepth) {
         g_mic_tail = static_cast<uint8_t>((g_mic_tail + 1u) % kMicQueueDepth);
         --g_mic_count;
+        ++g_debug_counters.mic_queue_drop;
     }
 
     std::copy(data, data + kMicOpusBytes, g_mic_queue[g_mic_head].data.begin());
@@ -161,6 +179,18 @@ bool __not_in_flash_func(encode_opus_frame)(uint8_t *out)
     return encoded > 0;
 }
 
+void put_u32_le(uint8_t *out, std::size_t len, std::size_t offset,
+                uint32_t value)
+{
+    if (out == nullptr || offset + 4u > len) {
+        return;
+    }
+    out[offset] = static_cast<uint8_t>(value);
+    out[offset + 1u] = static_cast<uint8_t>(value >> 8u);
+    out[offset + 2u] = static_cast<uint8_t>(value >> 16u);
+    out[offset + 3u] = static_cast<uint8_t>(value >> 24u);
+}
+
 bool __not_in_flash_func(send_audio_status_report)()
 {
     if (!classic_hid_is_connected()) {
@@ -204,11 +234,19 @@ bool __not_in_flash_func(send_speaker_report)(const DualSenseOutputState &state,
     report[142] = 0x96;
     report[143] = static_cast<uint8_t>(kOpusBytesPerReport);
     if (!encode_opus_frame(report.data() + 144)) {
+        ++g_debug_counters.speaker_encode_fail;
         return false;
     }
 
     fill_dualsense_output_crc(report.data(), report.size());
-    return classic_hid_send_raw_output_report(report.data(), report.size());
+    const bool sent =
+        classic_hid_send_raw_output_report(report.data(), report.size());
+    if (sent) {
+        ++g_debug_counters.speaker_send_ok;
+    } else {
+        ++g_debug_counters.speaker_send_fail;
+    }
+    return sent;
 }
 
 void __not_in_flash_func(append_speaker_usb_frames)(
@@ -292,8 +330,10 @@ void __not_in_flash_func(service_mic)()
     const int decoded = opus_decode(g_decoder, packet.data.data(), kMicOpusBytes,
                                     mono.data(), kOpusFrameSamples, 0);
     if (decoded <= 0) {
+        ++g_debug_counters.mic_decode_fail;
         return;
     }
+    ++g_debug_counters.mic_decode_ok;
 
     std::array<uint32_t, kOpusFrameSamples> stereo{};
     for (int i = 0; i < decoded; ++i) {
@@ -305,7 +345,13 @@ void __not_in_flash_func(service_mic)()
 
     const uint16_t bytes =
         static_cast<uint16_t>(decoded * static_cast<int>(sizeof(uint32_t)));
-    (void)tud_audio_write(stereo.data(), bytes);
+    const uint16_t written = tud_audio_write(stereo.data(), bytes);
+    if (written == bytes) {
+        ++g_debug_counters.mic_write_ok;
+    } else {
+        ++g_debug_counters.mic_write_fail;
+    }
+    g_debug_counters.mic_write_bytes += written;
 }
 
 uint8_t entity_index(uint8_t entity)
@@ -488,6 +534,7 @@ void __not_in_flash_func(dualsense_audio_add_mic_frame)(const uint8_t *data,
         return;
     }
 
+    ++g_debug_counters.mic_packets;
     push_mic_packet(data);
 }
 
@@ -541,8 +588,63 @@ bool __not_in_flash_func(dualsense_audio_speaker_active)()
 void __not_in_flash_func(dualsense_audio_loop)(const DualSenseOutputState &state,
                                                uint8_t &sequence)
 {
+    ++g_debug_counters.loop_calls;
+    const uint32_t now = board_millis();
+    if (g_last_audio_loop_ms != 0) {
+        const uint32_t gap = now - g_last_audio_loop_ms;
+        if (gap > g_debug_counters.max_loop_gap_ms) {
+            g_debug_counters.max_loop_gap_ms = gap;
+        }
+    }
+    g_last_audio_loop_ms = now;
     service_speaker(state, sequence);
     service_mic();
+}
+
+std::size_t dualsense_audio_debug_counters_report(uint8_t *out,
+                                                  std::size_t len)
+{
+    if (out == nullptr || len == 0) {
+        return 0;
+    }
+    std::memset(out, 0, len);
+    if (len >= 4u) {
+        out[0] = 'A';
+        out[1] = 'U';
+        out[2] = 'D';
+        out[3] = '1';
+    }
+    if (len > 4u) {
+        out[4] = 1;
+    }
+    if (len > 5u) {
+        out[5] = g_speaker_streaming ? 1u : 0u;
+    }
+    if (len > 6u) {
+        out[6] = mic_enabled() ? 1u : 0u;
+    }
+    if (len > 7u) {
+        out[7] = g_mic_count;
+    }
+    put_u32_le(out, len, 8, g_debug_counters.loop_calls);
+    put_u32_le(out, len, 12, g_debug_counters.max_loop_gap_ms);
+    put_u32_le(out, len, 16, g_debug_counters.speaker_send_ok);
+    put_u32_le(out, len, 20, g_debug_counters.speaker_send_fail);
+    put_u32_le(out, len, 24, g_debug_counters.speaker_encode_fail);
+    put_u32_le(out, len, 28, g_debug_counters.mic_packets);
+    put_u32_le(out, len, 32, g_debug_counters.mic_queue_drop);
+    put_u32_le(out, len, 36, g_debug_counters.mic_decode_ok);
+    put_u32_le(out, len, 40, g_debug_counters.mic_decode_fail);
+    put_u32_le(out, len, 44, g_debug_counters.mic_write_ok);
+    put_u32_le(out, len, 48, g_debug_counters.mic_write_fail);
+    put_u32_le(out, len, 52, g_debug_counters.mic_write_bytes);
+    return len;
+}
+
+void dualsense_audio_reset_debug_counters()
+{
+    g_debug_counters = {};
+    g_last_audio_loop_ms = 0;
 }
 
 } // namespace switchbridge

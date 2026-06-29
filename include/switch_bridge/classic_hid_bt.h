@@ -29,6 +29,8 @@ bool classic_hid_is_connected();
 BtControllerKind classic_hid_controller_kind();
 bool classic_hid_send_dualsense_output_report(const DualSenseBtOutputReport &report);
 bool classic_hid_send_raw_output_report(const uint8_t *report, std::size_t size);
+std::size_t classic_hid_debug_counters_report(uint8_t *out, std::size_t len);
+void classic_hid_reset_debug_counters();
 bool classic_hid_power_off_active_controller();
 bool classic_hid_disconnect();
 void classic_hid_bootsel_click_action();

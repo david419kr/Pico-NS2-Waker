@@ -85,6 +85,7 @@ uint32_t g_last_right_pulse_ms = 0;
 bool g_stack_ready = false;
 bool g_write_ready = false;
 bool g_xbox_input_probe_pending = false;
+bool g_scan_suppressed = false;
 SteamHogBtControllerKind g_controller_kind = SteamHogBtControllerKind::Unknown;
 SteamHogBtControllerKind g_last_seen_kind = SteamHogBtControllerKind::Unknown;
 ValveGattState g_valve_gatt_state = ValveGattState::Idle;
@@ -589,7 +590,7 @@ void clear_runtime_state(bool schedule_scan)
 
 void start_scan(uint32_t now_ms)
 {
-    if (!g_stack_ready || g_state != SteamHogState::Idle ||
+    if (g_scan_suppressed || !g_stack_ready || g_state != SteamHogState::Idle ||
         static_cast<int32_t>(now_ms - g_next_scan_ms) < 0) {
         return;
     }
@@ -1107,6 +1108,27 @@ void steam_hog_bt_resume_after_switch2_wake()
     clear_runtime_state(false);
     g_state = SteamHogState::Idle;
     g_next_scan_ms = now_ms() + kReconnectDelayMs;
+}
+
+void steam_hog_bt_set_scan_suppressed(bool suppressed)
+{
+    if (g_scan_suppressed == suppressed) {
+        return;
+    }
+    g_scan_suppressed = suppressed;
+    if (suppressed) {
+        if (g_state == SteamHogState::Scanning) {
+            gap_stop_scan();
+            g_state = SteamHogState::Idle;
+        } else if (g_state == SteamHogState::Connecting) {
+            (void)gap_connect_cancel();
+            clear_runtime_state(false);
+        }
+        return;
+    }
+    if (g_state == SteamHogState::Idle) {
+        g_next_scan_ms = now_ms() + kReconnectDelayMs;
+    }
 }
 
 } // namespace switchbridge

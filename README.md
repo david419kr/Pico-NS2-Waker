@@ -1,6 +1,6 @@
 [한국어 README](README.ko.md)
 
-# "Wake Switch 2 with Any Controller" Dongle
+# "Wake Switch 2 with Any Modern Controllers" Dongle
 
 Firmware for using a DualSense, DualShock 4, Nintendo Switch Pro Controller 1, Steam Controller, or Xbox Bluetooth controller on Nintendo Switch 1/2 with a Raspberry Pi Pico 2 W.  
 Any supported controller can wake a Nintendo Switch 2 from sleep. Switch 1 wake is not supported.
@@ -14,7 +14,7 @@ This project is heavily inspired by [awalol/DS5Dongle](https://github.com/awalol
 - Makes each controller appear as a `Nintendo Switch Pro Controller`.
 - Can wake a Nintendo Switch 2 from sleep after a one-time setup.
 - Supports motion controls and rumble. Xbox controllers do not support motion controls.
-- Includes a DualSense USB audio path for the 3.5 mm jack and microphone. This is currently a known problem and does not work correctly.
+- Includes a DualSense USB audio path for the 3.5 mm jack and microphone.
 
 ## Requirements
 
@@ -91,10 +91,6 @@ During wake, the Bluetooth controller connection disconnects once. After the Swi
 - Pressing the DualSense microphone mute button mutes the microphone and turns on the DualSense mute LED.
 
 The USB connection may briefly reconnect when the audio device changes. This is normal.
-
-### Known Problem
-
-DualSense USB audio is currently broken after recent controller-support updates. The devices are exposed, but 3.5 mm headset output is mostly silent, with rare short bursts of real audio. The DualSense microphone is also exposed, but currently records only short noise.
 
 ## BOOTSEL Button
 
