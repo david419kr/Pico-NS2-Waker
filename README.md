@@ -2,10 +2,12 @@
 
 # "Wake Switch 2 with Any Controller" Dongle
 
-Firmware for using a DualSense, DualShock 4, Nintendo Switch Pro Controller 1, Steam Controller, or Xbox Bluetooth controller on Nintendo Switch 1/2 with a Raspberry Pi Pico 2 W.
+Firmware for using a DualSense, DualShock 4, Nintendo Switch Pro Controller 1, Steam Controller, or Xbox Bluetooth controller on Nintendo Switch 1/2 with a Raspberry Pi Pico 2 W.  
 Any supported controller can wake a Nintendo Switch 2 from sleep. Switch 1 wake is not supported.
 
-Credit: This project is not a fork of [awalol/DS5Dongle](https://github.com/awalol/DS5Dongle), but it is heavily inspired by that project and references its DualSense implementation extensively.
+Credits:  
+[ataradov/usb-sniffer](https://github.com/ataradov/usb-sniffer) and [homewsn/blesniff](https://github.com/homewsn/blesniff) were a great help in analyzing controller behavior.  
+This project is heavily inspired by [awalol/DS5Dongle](https://github.com/awalol/DS5Dongle) and references its DualSense implementation extensively.
 
 ## What It Does
 

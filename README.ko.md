@@ -1,9 +1,11 @@
-# "아무 컨트롤러로 스위치2를 꺠우기" 동글
+# "아무 컨트롤러로 스위치2를 깨우기" 동글
 
-Raspberry Pi Pico 2 W를 이용해 DualSense, DualShock 4, Nintendo Switch Pro Controller 1, Steam Controller, Xbox Bluetooth 컨트롤러를 Nintendo Switch 1/2에서 사용 가능하게 하는 펌웨어입니다.
+Raspberry Pi Pico 2 W를 이용해 DualSense, DualShock 4, Nintendo Switch Pro Controller 1, Steam Controller, Xbox Bluetooth 컨트롤러를 Nintendo Switch 1/2에서 사용 가능하게 하는 펌웨어입니다.  
 어떤 컨트롤러를 사용해도 Switch 2 슬립모드를 깨울 수 있습니다. (Switch 1 깨우기는 지원하지 않습니다.)
 
-Credit: 이 프로젝트는 [awalol/DS5Dongle](https://github.com/awalol/DS5Dongle)의 포크는 아니지만, 해당 프로젝트에서 큰 영감을 받았고 듀얼센스 파트 구현에도 많은 참고를 하였습니다.
+Credits:  
+컨트롤러 동작을 분석하는 데에 [ataradov/usb-sniffer](https://github.com/ataradov/usb-sniffer)와 [homewsn/blesniff](https://github.com/homewsn/blesniff)가 큰 도움이 되었습니다.  
+[awalol/DS5Dongle](https://github.com/awalol/DS5Dongle)에서 큰 영감을 받았고 듀얼센스 파트 구현에도 많은 참고를 하였습니다.
 
 ## 할 수 있는 것
 
