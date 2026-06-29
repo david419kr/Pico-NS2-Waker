@@ -1,5 +1,6 @@
 #include "ds5onswitch/switch2_wake_runtime.h"
 
+#include "ds5onswitch/controller_feedback.h"
 #include "ds5onswitch/dualsense_bt.h"
 #include "ds5onswitch/steam_hog_bt.h"
 #include "ds5onswitch/switch2_wake.h"
@@ -20,10 +21,12 @@ namespace {
 constexpr uint32_t kSwitch2WakeTlvTag = 0x5332574bu; // ASCII 'S2WK'
 constexpr uint32_t kAdvertiseDurationMs = 20000;
 constexpr uint32_t kCooldownMs = 30000;
+constexpr uint32_t kControllerFeedbackLeadMs = 200;
 constexpr uint32_t kControllerPowerOffLeadMs = 500;
 
 enum class WakeState : uint8_t {
     Idle,
+    DisconnectFeedback,
     PoweringOffController,
     Advertising,
     Cooldown,
@@ -245,13 +248,9 @@ bool switch2_wake_request()
 
     std::printf("[S2WK] Wake requested\n");
     dualsense_bt_pause_for_switch2_wake();
-    const bool steam_power_off_queued = disconnect_classic_controller_for_wake();
-    if (steam_power_off_queued) {
-        g_state = WakeState::PoweringOffController;
-        g_state_ms = now;
-    } else {
-        start_wake_advertising_after_controller_pause();
-    }
+    controller_feedback_play(ControllerFeedbackCue::WakeDisconnect);
+    g_state = WakeState::DisconnectFeedback;
+    g_state_ms = now;
     return true;
 }
 
@@ -269,6 +268,20 @@ void switch2_wake_service(bool usb_mounted)
 
     switch (g_state) {
     case WakeState::Idle:
+        break;
+
+    case WakeState::DisconnectFeedback:
+        controller_feedback_service(now);
+        if (now - g_state_ms >= kControllerFeedbackLeadMs) {
+            const bool steam_power_off_queued =
+                disconnect_classic_controller_for_wake();
+            if (steam_power_off_queued) {
+                g_state = WakeState::PoweringOffController;
+                g_state_ms = now;
+            } else {
+                start_wake_advertising_after_controller_pause();
+            }
+        }
         break;
 
     case WakeState::PoweringOffController:

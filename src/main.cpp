@@ -1,6 +1,7 @@
 #include "ds5onswitch/mapper.h"
 #include "ds5onswitch/bootsel_button.h"
 #include "ds5onswitch/bt_debug_log.h"
+#include "ds5onswitch/controller_feedback.h"
 #include "ds5onswitch/debug_flags.h"
 #include "ds5onswitch/dualshock4_output.h"
 #include "ds5onswitch/dualshock4_report.h"
@@ -545,7 +546,11 @@ void __not_in_flash_func(service_dualsense_connection)()
         return;
     }
 
+    const BtControllerKind previous_kind = last_kind;
     const bool became_connected = connected && !was_connected;
+    const bool became_identified =
+        connected && kind != BtControllerKind::Unknown &&
+        (became_connected || previous_kind == BtControllerKind::Unknown);
     was_connected = connected;
     last_kind = kind;
 
@@ -612,18 +617,28 @@ void __not_in_flash_func(service_dualsense_connection)()
         g_last_xbox_buttons = 0;
         g_xbox_input = {};
     }
+    if (became_identified) {
+        controller_feedback_play(ControllerFeedbackCue::Connected);
+    }
 }
 
 void __not_in_flash_func(service_steam_connection)()
 {
     static bool was_connected = false;
+    static SteamHogBtControllerKind last_kind = SteamHogBtControllerKind::Unknown;
     const bool connected = steam_hog_bt_is_connected();
-    if (connected == was_connected) {
+    const SteamHogBtControllerKind kind = steam_hog_bt_controller_kind();
+    if (connected == was_connected && kind == last_kind) {
         return;
     }
 
+    const SteamHogBtControllerKind previous_kind = last_kind;
     const bool became_connected = connected && !was_connected;
+    const bool became_identified =
+        connected && kind != SteamHogBtControllerKind::Unknown &&
+        (became_connected || previous_kind == SteamHogBtControllerKind::Unknown);
     was_connected = connected;
+    last_kind = kind;
 
     if (!connected) {
         g_last_steam_buttons = 0;
@@ -658,6 +673,9 @@ void __not_in_flash_func(service_steam_connection)()
         g_usb_persona = UsbAudioPersona::HidOnly;
         usb_descriptors_set_audio_persona(g_usb_persona);
         request_usb_reconnect();
+    }
+    if (became_identified) {
+        controller_feedback_play(ControllerFeedbackCue::Connected);
     }
 }
 
@@ -950,6 +968,7 @@ void __no_inline_not_in_flash_func(app_loop)()
         service_dualsense_output();
         service_dualshock4_output();
         service_xbox_output();
+        controller_feedback_service(board_millis());
         service_switch2_registration();
         service_usb_reports();
         service_usb_reconnect();

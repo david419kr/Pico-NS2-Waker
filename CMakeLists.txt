@@ -60,6 +60,7 @@ target_link_libraries(ds5onswitch_core PUBLIC
 add_executable(ds5onswitch
     src/bootsel_button.cpp
     src/bt_debug_log.cpp
+    src/controller_feedback.cpp
     src/dualsense_audio.cpp
     src/dualsense_bt.cpp
     src/main.cpp
