@@ -9,8 +9,6 @@ namespace {
 
 constexpr int32_t kSwitchAccelCountsPerG = 4096;
 constexpr int32_t kPlayStationAccelCountsPerG = 8192;
-constexpr int32_t kSwitchGyroCountsPerDpsMilli = 14247;
-constexpr int32_t kPlayStationGyroCountsPerDps = 1024;
 constexpr uint32_t kSwitchStickAxisMax = 0x0fffu;
 
 constexpr int16_t clamp_i16(int32_t value)
@@ -23,12 +21,6 @@ constexpr int16_t clamp_i16(int32_t value)
 constexpr bool pressed(uint32_t buttons, PlayStationButton button)
 {
     return (buttons & static_cast<uint32_t>(button)) != 0;
-}
-
-constexpr int32_t div_round_nearest(int32_t numerator, int32_t denominator)
-{
-    return numerator >= 0 ? (numerator + denominator / 2) / denominator
-                          : (numerator - denominator / 2) / denominator;
 }
 
 void add_dpad(uint32_t &buttons, PlayStationDpad dpad)
@@ -81,10 +73,11 @@ int16_t playstation_accel_to_switch(int16_t value)
 
 int16_t playstation_gyro_to_switch(int16_t value)
 {
-    const int32_t scaled = div_round_nearest(
-        static_cast<int32_t>(value) * kSwitchGyroCountsPerDpsMilli,
-        kPlayStationGyroCountsPerDps * 1000);
-    return clamp_i16(scaled);
+    // 260628 baseline: the Switch Pro USB persona expects raw gyro counts, so
+    // forward the PlayStation gyro value unchanged. Re-introducing a
+    // counts/dps unit conversion here scales motion down by ~1/72 and is the
+    // regression that flattened DualSense (and DualShock 4) motion sensitivity.
+    return value;
 }
 
 SwitchProState map_playstation_to_switch(const PlayStationInput &input,

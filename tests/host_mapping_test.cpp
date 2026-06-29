@@ -152,8 +152,8 @@ void test_axis_and_motion_mapping()
     assert(axis8_to_switch12(0) == 0);
     assert(axis8_to_switch12(255) == 0x0fff);
     assert(axis8_to_switch12(128) >= 0x800);
-    assert(playstation_gyro_to_switch(1024) == 14);
-    assert(playstation_gyro_to_switch(-2048) == -28);
+    assert(playstation_gyro_to_switch(1024) == 1024);
+    assert(playstation_gyro_to_switch(-2048) == -2048);
 
     PlayStationInput in{};
     in.left_x = 0;
@@ -210,10 +210,9 @@ void test_nrf5340_steam_motion_axis_parity()
     in.accel_z = static_cast<int16_t>(-steam_accel_y);
 
     const SwitchProState state = map_playstation_to_switch(in);
-    assert(state.gyro_x == playstation_gyro_to_switch(steam_gyro_y));
-    assert(state.gyro_y == playstation_gyro_to_switch(
-                               static_cast<int16_t>(-steam_gyro_x)));
-    assert(state.gyro_z == playstation_gyro_to_switch(steam_gyro_z));
+    assert(state.gyro_x == steam_gyro_y);
+    assert(state.gyro_y == static_cast<int16_t>(-steam_gyro_x));
+    assert(state.gyro_z == steam_gyro_z);
 
     // nRF5340 Switch Pro scales Steam accel separately. This checks the
     // source axis/sign selection before DualSense-to-Switch scaling.
