@@ -463,6 +463,31 @@ void test_steam_output_builders()
     assert(out[1] == kSteamTrackpadHapticRight);
     assert(out[2] == 0xb0u && out[3] == 0x04u);
 
+    const std::size_t command_len =
+        build_steam_trackpad_command_output(kSteamTrackpadHapticRight,
+                                            kSteamHapticCommandTick,
+                                            kSteamTrackpadTouchGainDb,
+                                            out.data(), out.size());
+    assert(command_len == 4u);
+    assert(out[0] == kSteamOutHapticCommand);
+    assert(out[1] == kSteamTrackpadHapticRight);
+    assert(out[2] == kSteamHapticCommandTick);
+    assert(out[3] == 0xd3u);
+
+    const std::size_t feature_pulse_len =
+        build_steam_trackpad_feature_pulse_command(
+            kSteamTrackpadHapticRight, kSteamTrackpadClickPulseUs, 0, 1,
+            kSteamTrackpadClickPulseGainDb, buf.data(), buf.size());
+    assert(feature_pulse_len == 64u);
+    assert(buf[0] == kSteamFeatureReportCommand);
+    assert(buf[1] == kSteamCmdTriggerHapticPulse);
+    assert(buf[2] == 10u);
+    assert(buf[3] == kSteamTrackpadHapticRight);
+    assert(buf[4] == 0x88u && buf[5] == 0x13u);
+    assert(buf[8] == 0x01u && buf[9] == 0x00u);
+    assert(buf[10] == 0x28u && buf[11] == 0x00u);
+    assert(buf[12] == kSteamHapticPulseHighPriority);
+
     std::array<uint8_t, kSteamLegacyFeatureReportSize> power{};
     const std::size_t power_len =
         build_steam_power_off_feature_command(kSteamFeatureReportCommand,
@@ -496,6 +521,62 @@ void test_steam_output_builders()
     assert(gatt_power[0] == kSteamCmdPowerOff);
     assert(gatt_power[1] == 4u);
     assert(std::memcmp(gatt_power.data() + 2u, "off!", 4) == 0);
+}
+
+void test_steam_trackpad_haptic_policy()
+{
+    SteamTrackpadHapticState state{};
+    SteamControllerInput input{};
+
+    SteamTrackpadHapticAction action =
+        update_steam_trackpad_haptics(input, state, 0);
+    assert(!action.left_click && !action.right_click);
+    assert(!action.left_tick && !action.right_tick);
+
+    input.buttons = kSteamBtnRightPadTouch;
+    input.right_pad_x = 1000;
+    input.right_pad_y = 1000;
+    action = update_steam_trackpad_haptics(input, state, 1);
+    assert(!action.right_tick && !action.right_click);
+
+    input.right_pad_x = 3000;
+    input.right_pad_y = 1100;
+    action = update_steam_trackpad_haptics(input, state, 25);
+    assert(action.right_tick && !action.right_click);
+
+    input.right_pad_x = 5200;
+    action = update_steam_trackpad_haptics(input, state, 35);
+    assert(!action.right_tick && !action.right_click);
+
+    input.buttons = kSteamBtnRightPadTouch | kSteamBtnRightPadClick;
+    action = update_steam_trackpad_haptics(input, state, 60);
+    assert(action.right_click && !action.right_tick);
+
+    action = update_steam_trackpad_haptics(input, state, 90);
+    assert(!action.right_click && action.right_tick);
+
+    input.buttons = 0;
+    action = update_steam_trackpad_haptics(input, state, 120);
+    assert(action.right_click && !action.right_tick);
+
+    input = {};
+    input.buttons = kSteamBtnLeftPadClick;
+    input.left_pad_x = 30000;
+    input.left_pad_y = 0;
+    action = update_steam_trackpad_haptics(input, state, 150);
+    assert(action.left_click && !action.left_tick);
+
+    input.left_pad_x = 0;
+    input.left_pad_y = 30000;
+    action = update_steam_trackpad_haptics(input, state, 180);
+    assert(action.left_click && !action.left_tick);
+
+    action = update_steam_trackpad_haptics(input, state, 210);
+    assert(!action.left_click && !action.left_tick);
+
+    input.buttons = 0;
+    action = update_steam_trackpad_haptics(input, state, 240);
+    assert(action.left_click && !action.left_tick);
 }
 
 void test_xbox_controller_input_parser_and_mapping()
@@ -1557,6 +1638,7 @@ int main()
     test_steam_controller_input_parser_and_mapping();
     test_steam_persona_combo_filter();
     test_steam_output_builders();
+    test_steam_trackpad_haptic_policy();
     test_xbox_controller_input_parser_and_mapping();
     test_xbox_persona_and_capture_combos();
     test_xbox_rumble_output_builder();

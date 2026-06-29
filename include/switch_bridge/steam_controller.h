@@ -38,6 +38,10 @@ constexpr uint8_t kSteamTrackpadHapticRight = 0x01;
 constexpr uint8_t kSteamHapticCommandTick = 0x01;
 constexpr uint8_t kSteamHapticCommandClick = 0x02;
 constexpr uint8_t kSteamHapticPulseHighPriority = 0x01;
+constexpr uint16_t kSteamTrackpadClickPulseUs = 5000;
+constexpr int8_t kSteamTrackpadTouchGainDb = -45;
+constexpr int8_t kSteamTrackpadClickCommandGainDb = 9;
+constexpr int16_t kSteamTrackpadClickPulseGainDb = 40;
 
 enum SteamControllerButton : uint32_t {
     kSteamBtnA = 0x00000001u,
@@ -96,6 +100,28 @@ struct SteamControllerInput {
     bool has_imu = false;
 };
 
+struct SteamTrackpadHapticState {
+    bool prev_left_click = false;
+    bool prev_right_click = false;
+    uint8_t prev_left_dpad_mask = 0;
+    uint8_t prev_right_dpad_mask = 0;
+    bool prev_left_touch = false;
+    bool prev_right_touch = false;
+    int16_t prev_left_x = 0;
+    int16_t prev_left_y = 0;
+    int16_t prev_right_x = 0;
+    int16_t prev_right_y = 0;
+    uint32_t last_left_pulse_ms = 0;
+    uint32_t last_right_pulse_ms = 0;
+};
+
+struct SteamTrackpadHapticAction {
+    bool left_tick = false;
+    bool right_tick = false;
+    bool left_click = false;
+    bool right_click = false;
+};
+
 bool parse_steam_controller_report(const uint8_t *data, std::size_t size,
                                    SteamControllerInput &out);
 
@@ -103,6 +129,9 @@ uint8_t steam_trigger_to_u8(uint16_t raw);
 uint16_t steam_axis_to_switch12(int16_t raw, bool invert = false);
 int16_t steam_accel_to_switch(int16_t raw);
 SwitchProState map_steam_to_switch(const SteamControllerInput &input);
+SteamTrackpadHapticAction update_steam_trackpad_haptics(
+    const SteamControllerInput &input, SteamTrackpadHapticState &state,
+    uint32_t now_ms);
 
 std::size_t build_steam_feature_command(uint8_t command, const uint8_t *payload,
                                         uint8_t payload_size, uint8_t *out,
@@ -120,6 +149,9 @@ std::size_t build_steam_trackpad_pulse_output(uint8_t side, uint16_t on_us,
 std::size_t build_steam_trackpad_command_output(uint8_t side, uint8_t command,
                                                 int8_t gain_db, uint8_t *out,
                                                 std::size_t out_size);
+std::size_t build_steam_trackpad_feature_pulse_command(
+    uint8_t pad, uint16_t on_us, uint16_t off_us, uint16_t repeat_count,
+    int16_t gain_db, uint8_t *out, std::size_t out_size);
 std::size_t build_steam_power_off_feature_command(uint8_t feature_report_id,
                                                   uint8_t *out,
                                                   std::size_t out_size);

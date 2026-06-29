@@ -10,6 +10,8 @@ constexpr int16_t kSwitchAccelCountsPerG = 4096;
 constexpr int16_t kSwitchAccelDeadzoneCounts = 96;
 constexpr int32_t kSteamToSwitchAccelDivisor = 4;
 constexpr int32_t kSteamTrackpadDpadDeadzone = 9000;
+constexpr int32_t kSteamTrackpadMovePulseThreshold = 1800;
+constexpr uint32_t kSteamTrackpadMovePulseIntervalMs = 22;
 constexpr std::size_t kSteamFeatureCommandSize = 64;
 
 uint16_t read_u16_le(const uint8_t *p)
@@ -156,6 +158,31 @@ void map_dpad_dir(SteamDpadDir dir, uint32_t &switch_buttons)
     }
 }
 
+uint8_t trackpad_dpad_mask(SteamDpadDir dir)
+{
+    switch (dir) {
+    case SteamDpadDir::N:
+        return 0x01u;
+    case SteamDpadDir::NE:
+        return 0x01u | 0x02u;
+    case SteamDpadDir::E:
+        return 0x02u;
+    case SteamDpadDir::SE:
+        return 0x04u | 0x02u;
+    case SteamDpadDir::S:
+        return 0x04u;
+    case SteamDpadDir::SW:
+        return 0x04u | 0x08u;
+    case SteamDpadDir::W:
+        return 0x08u;
+    case SteamDpadDir::NW:
+        return 0x01u | 0x08u;
+    case SteamDpadDir::None:
+        return 0;
+    }
+    return 0;
+}
+
 void map_left_trackpad_dpad(const SteamControllerInput &input,
                             uint32_t &switch_buttons)
 {
@@ -180,6 +207,46 @@ bool right_trackpad_active(const SteamControllerInput &input)
 uint16_t motor_to_u16(uint8_t value)
 {
     return static_cast<uint16_t>(value) * 257u;
+}
+
+bool pulse_interval_elapsed(uint32_t now_ms, uint32_t last_ms)
+{
+    return last_ms == 0u ||
+           static_cast<uint32_t>(now_ms - last_ms) >=
+               kSteamTrackpadMovePulseIntervalMs;
+}
+
+bool update_touch_tick(bool active, int16_t x, int16_t y, bool skip_for_click,
+                       bool &prev_active, int16_t &prev_x, int16_t &prev_y,
+                       uint32_t &last_pulse_ms, uint32_t now_ms)
+{
+    if (!active) {
+        prev_active = false;
+        return false;
+    }
+
+    bool moved = false;
+    if (prev_active) {
+        const int32_t dx = abs_i32(static_cast<int32_t>(x) - prev_x);
+        const int32_t dy = abs_i32(static_cast<int32_t>(y) - prev_y);
+        moved = dx + dy >= kSteamTrackpadMovePulseThreshold;
+    }
+
+    if (moved && !skip_for_click && pulse_interval_elapsed(now_ms,
+                                                           last_pulse_ms)) {
+        last_pulse_ms = now_ms;
+        prev_x = x;
+        prev_y = y;
+        prev_active = true;
+        return true;
+    }
+
+    if (!prev_active) {
+        prev_x = x;
+        prev_y = y;
+    }
+    prev_active = true;
+    return false;
 }
 
 } // namespace
@@ -347,6 +414,57 @@ SwitchProState map_steam_to_switch(const SteamControllerInput &input)
     return state;
 }
 
+SteamTrackpadHapticAction update_steam_trackpad_haptics(
+    const SteamControllerInput &input, SteamTrackpadHapticState &state,
+    uint32_t now_ms)
+{
+    const bool raw_left_click =
+        (input.buttons & kSteamBtnLeftPadClick) != 0u;
+    const bool raw_right_click =
+        (input.buttons & kSteamBtnRightPadClick) != 0u;
+
+    const bool left_click_pulse =
+        raw_left_click != state.prev_left_click;
+    const bool right_click_pulse =
+        raw_right_click != state.prev_right_click;
+
+    const uint8_t left_dpad_mask = trackpad_dpad_mask(trackpad_dpad(
+        input.left_pad_x, input.left_pad_y, raw_left_click));
+    const bool left_dpad_direction_pulse =
+        raw_left_click && !left_click_pulse &&
+        left_dpad_mask != state.prev_left_dpad_mask;
+
+    state.prev_left_click = raw_left_click;
+    state.prev_right_click = raw_right_click;
+    state.prev_left_dpad_mask = raw_left_click ? left_dpad_mask : 0u;
+    state.prev_right_dpad_mask = 0u;
+
+    SteamTrackpadHapticAction action{};
+    action.left_click = left_click_pulse || left_dpad_direction_pulse;
+    action.right_click = right_click_pulse;
+
+    if (action.left_click) {
+        state.last_left_pulse_ms = now_ms;
+    }
+    if (action.right_click) {
+        state.last_right_pulse_ms = now_ms;
+    }
+
+    // Matches SteamlessController's policy for this firmware path:
+    // left pad is click-D-pad, right pad is touch/mouse-like right stick.
+    // SteamlessController gates the touch tick on the touch bit only
+    // (rawRightTouching = BTN_TP_RT); keep that exact condition for 1:1 parity.
+    const bool right_touch_haptic =
+        (input.buttons & kSteamBtnRightPadTouch) != 0u;
+    action.right_tick = update_touch_tick(
+        right_touch_haptic, input.right_pad_x, input.right_pad_y,
+        action.right_click, state.prev_right_touch, state.prev_right_x,
+        state.prev_right_y, state.last_right_pulse_ms, now_ms);
+
+    state.prev_left_touch = false;
+    return action;
+}
+
 std::size_t build_steam_feature_command(uint8_t command, const uint8_t *payload,
                                         uint8_t payload_size, uint8_t *out,
                                         std::size_t out_size)
@@ -438,6 +556,22 @@ std::size_t build_steam_trackpad_command_output(uint8_t side, uint8_t command,
     out[2] = command;
     out[3] = static_cast<uint8_t>(gain_db);
     return 4u;
+}
+
+std::size_t build_steam_trackpad_feature_pulse_command(
+    uint8_t pad, uint16_t on_us, uint16_t off_us, uint16_t repeat_count,
+    int16_t gain_db, uint8_t *out, std::size_t out_size)
+{
+    uint8_t payload[10]{};
+    payload[0] = pad;
+    write_u16_le(payload + 1u, on_us);
+    write_u16_le(payload + 3u, off_us);
+    write_u16_le(payload + 5u, repeat_count);
+    write_u16_le(payload + 7u, static_cast<uint16_t>(gain_db));
+    payload[9] = kSteamHapticPulseHighPriority;
+    return build_steam_feature_command(
+        kSteamCmdTriggerHapticPulse, payload,
+        static_cast<uint8_t>(sizeof(payload)), out, out_size);
 }
 
 std::size_t build_steam_power_off_feature_command(uint8_t feature_report_id,

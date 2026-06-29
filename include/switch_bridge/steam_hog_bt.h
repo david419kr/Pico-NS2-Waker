@@ -24,6 +24,7 @@ void steam_hog_bt_service(uint32_t now_ms);
 bool steam_hog_bt_is_connected();
 SteamHogBtControllerKind steam_hog_bt_controller_kind();
 bool steam_hog_bt_send_switch_feedback(const SwitchUsbFeedback &feedback);
+bool steam_hog_bt_pulse_trackpad_haptic(bool left, bool strong_click);
 bool steam_hog_bt_disconnect();
 bool steam_hog_bt_power_off();
 

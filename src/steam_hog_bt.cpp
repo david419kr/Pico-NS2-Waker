@@ -567,6 +567,42 @@ void enqueue_pulse(uint8_t side, uint8_t pulse, uint32_t now_ms,
     }
 }
 
+bool enqueue_trackpad_local_haptic(bool left, bool strong_click)
+{
+    if (!state_is_connected() ||
+        g_controller_kind != SteamHogBtControllerKind::SteamController) {
+        return false;
+    }
+
+    const uint8_t side = left ? kSteamTrackpadHapticLeft
+                              : kSteamTrackpadHapticRight;
+    const uint8_t command = strong_click ? kSteamHapticCommandClick
+                                         : kSteamHapticCommandTick;
+    const int8_t command_gain = strong_click
+                                    ? kSteamTrackpadClickCommandGainDb
+                                    : kSteamTrackpadTouchGainDb;
+
+    bool queued = false;
+    uint8_t report[64]{};
+    std::size_t len = build_steam_trackpad_command_output(
+        side, command, command_gain, report, sizeof(report));
+    if (len != 0u) {
+        queued = enqueue_hid_report(report, len, HID_REPORT_TYPE_OUTPUT) ||
+                 queued;
+    }
+
+    if (strong_click) {
+        len = build_steam_trackpad_feature_pulse_command(
+            side, kSteamTrackpadClickPulseUs, 0, 1,
+            kSteamTrackpadClickPulseGainDb, report, sizeof(report));
+        if (len != 0u) {
+            queued = enqueue_hid_report(report, len, HID_REPORT_TYPE_FEATURE) ||
+                     queued;
+        }
+    }
+    return queued;
+}
+
 void clear_runtime_state(bool schedule_scan)
 {
     reset_valve_gatt();
@@ -1030,6 +1066,15 @@ bool steam_hog_bt_send_switch_feedback(const SwitchUsbFeedback &feedback)
     }
 
     try_tx();
+    return queued;
+}
+
+bool steam_hog_bt_pulse_trackpad_haptic(bool left, bool strong_click)
+{
+    const bool queued = enqueue_trackpad_local_haptic(left, strong_click);
+    if (queued) {
+        try_tx();
+    }
     return queued;
 }
 

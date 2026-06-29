@@ -72,6 +72,7 @@ HapticCommand g_xbox_haptics{};
 uint32_t g_last_xbox_output_ms = 0;
 bool g_xbox_output_dirty = false;
 XboxControllerInput g_xbox_input{};
+SteamTrackpadHapticState g_steam_trackpad_haptics{};
 
 constexpr uint32_t kUsbUnmountDebounceMs = 1000;
 constexpr uint32_t kHomeWakePendingWindowMs = 3000;
@@ -502,6 +503,19 @@ void __not_in_flash_func(on_steam_hog_bt_data)(SteamHogBtControllerKind kind,
         g_home_wake_pending_ms = now;
     }
 
+    const SteamTrackpadHapticAction haptic_action =
+        update_steam_trackpad_haptics(input, g_steam_trackpad_haptics, now);
+    if (haptic_action.left_click) {
+        steam_hog_bt_pulse_trackpad_haptic(true, true);
+    } else if (haptic_action.left_tick) {
+        steam_hog_bt_pulse_trackpad_haptic(true, false);
+    }
+    if (haptic_action.right_click) {
+        steam_hog_bt_pulse_trackpad_haptic(false, true);
+    } else if (haptic_action.right_tick) {
+        steam_hog_bt_pulse_trackpad_haptic(false, false);
+    }
+
     g_procon_passthrough_valid = false;
     g_switch_usb.set_state(map_steam_to_switch(input));
 }
@@ -645,11 +659,15 @@ void __not_in_flash_func(service_steam_connection)()
         (became_connected || previous_kind == SteamHogBtControllerKind::Unknown);
     was_connected = connected;
     last_kind = kind;
+    if (kind != previous_kind) {
+        g_steam_trackpad_haptics = {};
+    }
 
     if (!connected) {
         g_last_steam_buttons = 0;
         g_last_xbox_buttons = 0;
         g_xbox_input = {};
+        g_steam_trackpad_haptics = {};
         if (classic_hid_is_connected()) {
             return;
         }
