@@ -1,11 +1,11 @@
-#include "ds5onswitch/persona_combo_filter.h"
+#include "switch_bridge/persona_combo_filter.h"
 
-namespace ds5onswitch {
+namespace switchbridge {
 
 PersonaComboFilterResult PersonaComboFilter::process(uint32_t raw_buttons,
                                                      uint32_t now_ms)
 {
-    return process(raw_buttons, kDs5Ps, kDs5TouchpadClick, now_ms);
+    return process(raw_buttons, kPsButton, kPsTouchpadClick, now_ms);
 }
 
 PersonaComboFilterResult PersonaComboFilter::process(uint32_t raw_buttons,
@@ -73,4 +73,4 @@ void PersonaComboFilter::reset()
     tap_count_ = 0;
 }
 
-} // namespace ds5onswitch
+} // namespace switchbridge

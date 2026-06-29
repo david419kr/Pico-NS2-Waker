@@ -1,4 +1,4 @@
-#include "ds5onswitch/dualsense_output.h"
+#include "switch_bridge/dualsense_output.h"
 
 #if __has_include("pico.h")
 #include "pico.h"
@@ -8,7 +8,7 @@
 
 #include <algorithm>
 
-namespace ds5onswitch {
+namespace switchbridge {
 
 namespace {
 
@@ -80,7 +80,7 @@ void __not_in_flash_func(DualSenseOutputState::reset)()
 }
 
 void __not_in_flash_func(DualSenseOutputState::apply_haptics)(
-    const DualSenseHapticCommand &command)
+    const HapticCommand &command)
 {
     state_[kRumbleLeftOffset] = mix_motor(command.left_motor, command.left_pulse);
     state_[kRumbleRightOffset] = mix_motor(command.right_motor, command.right_pulse);
@@ -183,4 +183,4 @@ void __not_in_flash_func(fill_dualsense_output_crc)(uint8_t *report,
     report[size - 1u] = static_cast<uint8_t>(crc >> 24u);
 }
 
-} // namespace ds5onswitch
+} // namespace switchbridge

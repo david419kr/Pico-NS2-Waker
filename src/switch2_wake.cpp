@@ -1,6 +1,6 @@
-#include "ds5onswitch/switch2_wake.h"
+#include "switch_bridge/switch2_wake.h"
 
-namespace ds5onswitch {
+namespace switchbridge {
 
 bool switch2_wake_addr_valid(const uint8_t addr_wire[kSwitch2WakeConsoleAddrWireSize])
 {
@@ -37,4 +37,4 @@ Switch2WakeAdvData switch2_wake_build_adv_data(
     return adv;
 }
 
-} // namespace ds5onswitch
+} // namespace switchbridge

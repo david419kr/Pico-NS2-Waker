@@ -1,9 +1,9 @@
-#include "ds5onswitch/xbox_controller.h"
+#include "switch_bridge/xbox_controller.h"
 
 #include <algorithm>
 #include <cstring>
 
-namespace ds5onswitch {
+namespace switchbridge {
 
 namespace {
 
@@ -301,7 +301,7 @@ SwitchProState map_xbox_to_switch(const XboxControllerInput &input)
     return state;
 }
 
-std::size_t build_xbox_rumble_output(const DualSenseHapticCommand &haptics,
+std::size_t build_xbox_rumble_output(const HapticCommand &haptics,
                                      uint8_t *out, std::size_t out_size)
 {
     if (out == nullptr || out_size < kXboxRumbleReportSize) {
@@ -321,4 +321,4 @@ std::size_t build_xbox_rumble_output(const DualSenseHapticCommand &haptics,
     return kXboxRumbleReportSize;
 }
 
-} // namespace ds5onswitch
+} // namespace switchbridge

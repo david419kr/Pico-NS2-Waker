@@ -1,10 +1,10 @@
 #pragma once
 
-#include "ds5onswitch/types.h"
+#include "switch_bridge/types.h"
 
 #include <cstdint>
 
-namespace ds5onswitch {
+namespace switchbridge {
 
 enum class PersonaComboRequest : uint8_t {
     None,
@@ -31,4 +31,4 @@ private:
     uint8_t tap_count_ = 0;
 };
 
-} // namespace ds5onswitch
+} // namespace switchbridge

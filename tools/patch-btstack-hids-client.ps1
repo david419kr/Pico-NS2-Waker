@@ -24,9 +24,9 @@ if (-not [regex]::IsMatch($Source, $Pattern)) {
 
 $Patched = [regex]::Replace($Source, $Pattern, $Replacement, 1)
 if ($Patched -eq $Source) {
-    Write-Host "[ds5onswitch] BTstack HIDS report table already patched: $HeaderPath" -ForegroundColor DarkGray
+    Write-Host "[switchbridge] BTstack HIDS report table already patched: $HeaderPath" -ForegroundColor DarkGray
     return
 }
 
 Set-Content -LiteralPath $HeaderPath -Value $Patched -NoNewline
-Write-Host "[ds5onswitch] Patched BTstack HIDS report table to $ReportCount reports: $HeaderPath" -ForegroundColor Yellow
+Write-Host "[switchbridge] Patched BTstack HIDS report table to $ReportCount reports: $HeaderPath" -ForegroundColor Yellow

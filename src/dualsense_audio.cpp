@@ -1,6 +1,6 @@
-#include "ds5onswitch/dualsense_audio.h"
+#include "switch_bridge/dualsense_audio.h"
 
-#include "ds5onswitch/dualsense_bt.h"
+#include "switch_bridge/classic_hid_bt.h"
 
 #include "bsp/board_api.h"
 #include "opus.h"
@@ -12,7 +12,7 @@
 #include <cmath>
 #include <cstring>
 
-namespace ds5onswitch {
+namespace switchbridge {
 namespace {
 
 constexpr uint8_t kSpeakerInterface = 2;
@@ -163,7 +163,7 @@ bool __not_in_flash_func(encode_opus_frame)(uint8_t *out)
 
 bool __not_in_flash_func(send_audio_status_report)()
 {
-    if (!dualsense_bt_is_connected()) {
+    if (!classic_hid_is_connected()) {
         return false;
     }
 
@@ -178,7 +178,7 @@ bool __not_in_flash_func(send_audio_status_report)()
     report[10] = g_packet_counter++;
 
     fill_dualsense_output_crc(report.data(), report.size());
-    return dualsense_bt_send_raw_output_report(report.data(), report.size());
+    return classic_hid_send_raw_output_report(report.data(), report.size());
 }
 
 bool __not_in_flash_func(send_speaker_report)(const DualSenseOutputState &state,
@@ -208,7 +208,7 @@ bool __not_in_flash_func(send_speaker_report)(const DualSenseOutputState &state,
     }
 
     fill_dualsense_output_crc(report.data(), report.size());
-    return dualsense_bt_send_raw_output_report(report.data(), report.size());
+    return classic_hid_send_raw_output_report(report.data(), report.size());
 }
 
 void __not_in_flash_func(append_speaker_usb_frames)(
@@ -244,7 +244,7 @@ void __not_in_flash_func(service_speaker)(const DualSenseOutputState &state,
 {
     if (!g_speaker_streaming || !g_headphones_connected ||
         usb_descriptors_audio_persona() != UsbAudioPersona::Headset ||
-        !dualsense_bt_is_connected()) {
+        !classic_hid_is_connected()) {
         drain_speaker_audio();
         return;
     }
@@ -473,7 +473,7 @@ void __not_in_flash_func(dualsense_audio_set_connected)(bool connected)
 }
 
 void __not_in_flash_func(dualsense_audio_update_status)(
-    const DualSenseInput &input)
+    const PlayStationInput &input)
 {
     g_connected = true;
     g_headphones_connected = input.headphones_connected;
@@ -545,25 +545,25 @@ void __not_in_flash_func(dualsense_audio_loop)(const DualSenseOutputState &state
     service_mic();
 }
 
-} // namespace ds5onswitch
+} // namespace switchbridge
 
 extern "C" bool tud_audio_set_itf_cb(uint8_t rhport,
                                       tusb_control_request_t const *request)
 {
     (void)rhport;
-    return ds5onswitch::set_audio_interface(TU_U16_LOW(request->wIndex),
+    return switchbridge::set_audio_interface(TU_U16_LOW(request->wIndex),
                                             TU_U16_LOW(request->wValue));
 }
 
 extern "C" bool tud_audio_get_req_entity_cb(
     uint8_t rhport, tusb_control_request_t const *request)
 {
-    return ds5onswitch::handle_get_entity(rhport, request);
+    return switchbridge::handle_get_entity(rhport, request);
 }
 
 extern "C" bool tud_audio_set_req_entity_cb(
     uint8_t rhport, tusb_control_request_t const *request, uint8_t *buffer)
 {
     (void)rhport;
-    return ds5onswitch::handle_set_entity(request, buffer);
+    return switchbridge::handle_set_entity(request, buffer);
 }

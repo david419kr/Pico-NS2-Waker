@@ -91,7 +91,7 @@ function Get-HidDevicePaths {
     }
 }
 
-function Open-DS5onSwitchHid {
+function Open-SwitchBridgeHid {
     $paths = Get-HidDevicePaths | Where-Object {
         $_ -match 'vid_057e' -and ($_ -match 'pid_2009' -or $_ -match 'pid_2069')
     }
@@ -101,7 +101,7 @@ function Open-DS5onSwitchHid {
             return $handle
         }
     }
-    throw "DS5onSwitch HID device not found. Connect the Pico while the firmware is running."
+    throw "SwitchBridge HID device not found. Connect the Pico while the firmware is running."
 }
 
 function Set-LogOffset([Microsoft.Win32.SafeHandles.SafeFileHandle]$Handle, [uint32]$Offset, [bool]$DoClear) {
@@ -144,9 +144,15 @@ $events = @{
     11='ControllerKind'; 12='L2capOpen'; 13='L2capIncoming'
     14='L2capClosed'; 15='HidData'
 }
-$kinds = @{ 0='Unknown'; 1='DualSense'; 2='SwitchPro' }
+$kinds = @{
+    0='Unknown'
+    1='DualSense'
+    2='DualShock4'
+    3='SwitchPro'
+    4='Xbox'
+}
 
-$handle = Open-DS5onSwitchHid
+$handle = Open-SwitchBridgeHid
 try {
     if ($Clear) {
         Set-LogOffset $handle 0 $true

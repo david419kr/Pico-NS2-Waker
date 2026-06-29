@@ -1,12 +1,12 @@
 #pragma once
 
-#include "ds5onswitch/haptics.h"
+#include "switch_bridge/haptics.h"
 
 #include <array>
 #include <cstddef>
 #include <cstdint>
 
-namespace ds5onswitch {
+namespace switchbridge {
 
 constexpr std::size_t kDualSenseOutputStateSize = 47;
 constexpr std::size_t kDualSenseOutputStateBlockSize = 63;
@@ -21,7 +21,7 @@ using DualSenseBtAudioReport =
 class DualSenseOutputState {
 public:
     void reset();
-    void apply_haptics(const DualSenseHapticCommand &command);
+    void apply_haptics(const HapticCommand &command);
     void clear_motors();
     void set_mic_muted(bool muted);
     bool motors_active() const;
@@ -40,4 +40,4 @@ uint32_t dualsense_crc32_seeded(uint8_t seed, const uint8_t *data,
 void fill_dualsense_output_crc(DualSenseBtOutputReport &report);
 void fill_dualsense_output_crc(uint8_t *report, std::size_t size);
 
-} // namespace ds5onswitch
+} // namespace switchbridge

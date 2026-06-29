@@ -1,12 +1,12 @@
 #pragma once
 
-#include "ds5onswitch/haptics.h"
-#include "ds5onswitch/types.h"
+#include "switch_bridge/haptics.h"
+#include "switch_bridge/types.h"
 
 #include <cstddef>
 #include <cstdint>
 
-namespace ds5onswitch {
+namespace switchbridge {
 
 constexpr uint16_t kSteamControllerValveVid = 0x28de;
 constexpr uint16_t kSteamControllerBlePid = 0x1303;
@@ -109,7 +109,7 @@ std::size_t build_steam_feature_command(uint8_t command, const uint8_t *payload,
                                         std::size_t out_size);
 std::size_t build_steam_settings_feature_command(uint8_t *out,
                                                  std::size_t out_size);
-std::size_t build_steam_body_rumble_output(const DualSenseHapticCommand &haptics,
+std::size_t build_steam_body_rumble_output(const HapticCommand &haptics,
                                            uint8_t *out,
                                            std::size_t out_size);
 std::size_t build_steam_trackpad_pulse_output(uint8_t side, uint16_t on_us,
@@ -128,4 +128,4 @@ std::size_t build_steam_power_off_legacy_feature_command(uint8_t *out,
 std::size_t build_steam_power_off_gatt_value(uint8_t *out,
                                              std::size_t out_size);
 
-} // namespace ds5onswitch
+} // namespace switchbridge

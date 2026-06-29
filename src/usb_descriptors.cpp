@@ -1,6 +1,6 @@
-#include "ds5onswitch/usb_descriptors.h"
+#include "switch_bridge/usb_descriptors.h"
 
-#include "ds5onswitch/debug_flags.h"
+#include "switch_bridge/debug_flags.h"
 
 #include "bsp/board_api.h"
 #include "tusb.h"
@@ -8,7 +8,7 @@
 #include <cstddef>
 #include <cstring>
 
-namespace ds5onswitch {
+namespace switchbridge {
 namespace {
 
 enum {
@@ -62,7 +62,7 @@ uint8_t const kSwitchProHidReportDescriptor[] = {
     0x81,0x03,0x85,0x01,0x09,0x03,0x75,0x08,0x95,0x3f,0x91,0x83,0x85,0x10,0x09,0x04,
     0x75,0x08,0x95,0x3f,0x91,0x83,0x85,0x80,0x09,0x05,0x75,0x08,0x95,0x3f,0x91,0x83,
     0x85,0x82,0x09,0x06,0x75,0x08,0x95,0x3f,0x91,0x83,
-#if DS5ONSWITCH_ENABLE_BT_DEBUG_TOOLS
+#if SWITCHBRIDGE_ENABLE_BT_DEBUG_TOOLS
     0x85,0x7e,0x09,0x7e,0x75,0x08,0x95,0x3f,0xb1,0x02,
     0x85,0x7f,0x09,0x7f,0x75,0x08,0x95,0x3f,0xb1,0x02,
 #endif
@@ -311,46 +311,46 @@ UsbAudioPersona usb_descriptors_audio_persona()
     return g_audio_persona;
 }
 
-} // namespace ds5onswitch
+} // namespace switchbridge
 
 extern "C" uint8_t const *tud_descriptor_device_cb()
 {
-    if (ds5onswitch::usb_descriptors_controller_persona() ==
-        ds5onswitch::UsbControllerPersona::Switch2ProRegistration) {
+    if (switchbridge::usb_descriptors_controller_persona() ==
+        switchbridge::UsbControllerPersona::Switch2ProRegistration) {
         return reinterpret_cast<uint8_t const *>(
-            &ds5onswitch::kSwitch2ProDeviceDescriptor);
+            &switchbridge::kSwitch2ProDeviceDescriptor);
     }
     return reinterpret_cast<uint8_t const *>(
-        &ds5onswitch::kSwitchProDeviceDescriptor);
+        &switchbridge::kSwitchProDeviceDescriptor);
 }
 
 extern "C" uint8_t const *tud_descriptor_configuration_cb(uint8_t index)
 {
     (void)index;
-    using ds5onswitch::UsbAudioPersona;
-    if (ds5onswitch::usb_descriptors_controller_persona() ==
-        ds5onswitch::UsbControllerPersona::Switch2ProRegistration) {
-        return ds5onswitch::kSwitch2RegistrationConfigurationDescriptor;
+    using switchbridge::UsbAudioPersona;
+    if (switchbridge::usb_descriptors_controller_persona() ==
+        switchbridge::UsbControllerPersona::Switch2ProRegistration) {
+        return switchbridge::kSwitch2RegistrationConfigurationDescriptor;
     }
-    switch (ds5onswitch::usb_descriptors_audio_persona()) {
+    switch (switchbridge::usb_descriptors_audio_persona()) {
     case UsbAudioPersona::MicOnly:
-        return ds5onswitch::kMicOnlyConfigurationDescriptor;
+        return switchbridge::kMicOnlyConfigurationDescriptor;
     case UsbAudioPersona::Headset:
-        return ds5onswitch::kHeadsetConfigurationDescriptor;
+        return switchbridge::kHeadsetConfigurationDescriptor;
     case UsbAudioPersona::HidOnly:
     default:
-        return ds5onswitch::kHidOnlyConfigurationDescriptor;
+        return switchbridge::kHidOnlyConfigurationDescriptor;
     }
 }
 
 extern "C" uint8_t const *tud_hid_descriptor_report_cb(uint8_t instance)
 {
     (void)instance;
-    if (ds5onswitch::usb_descriptors_controller_persona() ==
-        ds5onswitch::UsbControllerPersona::Switch2ProRegistration) {
-        return ds5onswitch::kSwitch2ProHidReportDescriptor;
+    if (switchbridge::usb_descriptors_controller_persona() ==
+        switchbridge::UsbControllerPersona::Switch2ProRegistration) {
+        return switchbridge::kSwitch2ProHidReportDescriptor;
     }
-    return ds5onswitch::kSwitchProHidReportDescriptor;
+    return switchbridge::kSwitchProHidReportDescriptor;
 }
 
 extern "C" uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid)
@@ -358,41 +358,41 @@ extern "C" uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t lang
     (void)langid;
     std::size_t chr_count = 0;
 
-    if (index == ds5onswitch::kStrLangId) {
-        ds5onswitch::g_string_descriptor[1] = 0x0409;
+    if (index == switchbridge::kStrLangId) {
+        switchbridge::g_string_descriptor[1] = 0x0409;
         chr_count = 1;
     } else {
         const bool switch2 =
-            ds5onswitch::usb_descriptors_controller_persona() ==
-            ds5onswitch::UsbControllerPersona::Switch2ProRegistration;
+            switchbridge::usb_descriptors_controller_persona() ==
+            switchbridge::UsbControllerPersona::Switch2ProRegistration;
         char const *const *strings = switch2
-            ? ds5onswitch::kSwitch2ProStringDescriptor
-            : ds5onswitch::kSwitchProStringDescriptor;
+            ? switchbridge::kSwitch2ProStringDescriptor
+            : switchbridge::kSwitchProStringDescriptor;
         const std::size_t string_count = switch2
-            ? sizeof(ds5onswitch::kSwitch2ProStringDescriptor) /
-                  sizeof(ds5onswitch::kSwitch2ProStringDescriptor[0])
-            : sizeof(ds5onswitch::kSwitchProStringDescriptor) /
-                  sizeof(ds5onswitch::kSwitchProStringDescriptor[0]);
+            ? sizeof(switchbridge::kSwitch2ProStringDescriptor) /
+                  sizeof(switchbridge::kSwitch2ProStringDescriptor[0])
+            : sizeof(switchbridge::kSwitchProStringDescriptor) /
+                  sizeof(switchbridge::kSwitchProStringDescriptor[0]);
         if (index >= string_count) {
             return nullptr;
         }
         const char *str = strings[index];
         chr_count = std::strlen(str);
         const std::size_t max_count =
-            sizeof(ds5onswitch::g_string_descriptor) /
-                sizeof(ds5onswitch::g_string_descriptor[0]) -
+            sizeof(switchbridge::g_string_descriptor) /
+                sizeof(switchbridge::g_string_descriptor[0]) -
             1;
         if (chr_count > max_count) {
             chr_count = max_count;
         }
         for (std::size_t i = 0; i < chr_count; ++i) {
-            ds5onswitch::g_string_descriptor[1 + i] =
+            switchbridge::g_string_descriptor[1 + i] =
                 static_cast<uint8_t>(str[i]);
         }
     }
 
-    ds5onswitch::g_string_descriptor[0] =
+    switchbridge::g_string_descriptor[0] =
         static_cast<uint16_t>((TUSB_DESC_STRING << 8u) |
                               (2u * chr_count + 2u));
-    return ds5onswitch::g_string_descriptor;
+    return switchbridge::g_string_descriptor;
 }

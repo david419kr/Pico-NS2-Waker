@@ -21,13 +21,13 @@ This project is heavily inspired by [awalol/DS5Dongle](https://github.com/awalol
 - Raspberry Pi Pico 2 W
 - Sony DualSense controller, DualShock 4, Nintendo Switch Pro Controller 1, Steam Controller, or Xbox Bluetooth controller
 - Micro USB cable for connecting the Pico 2 W to the Switch/PC
-- Firmware file from the [latest GitHub Release](https://github.com/david419kr/DS5onSwitch/releases/latest)
+- Firmware file from the [latest GitHub Release](https://github.com/david419kr/wake-NS2-dongle/releases/latest)
 
 ## Installing Firmware
 
 1. Hold the BOOTSEL button on the Pico 2 W while connecting it to your PC over USB.
-2. Download `ds5onswitch.uf2` from the [latest GitHub Release](https://github.com/david419kr/DS5onSwitch/releases/latest).
-3. Copy `ds5onswitch.uf2` to the USB drive that appears on your PC.
+2. Download `switchbridge.uf2` from the [latest GitHub Release](https://github.com/david419kr/wake-NS2-dongle/releases/latest).
+3. Copy `switchbridge.uf2` to the USB drive that appears on your PC.
 4. After the copy finishes, the Pico 2 W will reboot automatically.
 
 If this firmware is already installed, you can click BOOTSEL 4 times to enter USB drive mode.
@@ -127,7 +127,7 @@ powershell -ExecutionPolicy Bypass -File tools\build.ps1
 After building, the firmware file is created here:
 
 ```text
-build\pico2_w\ds5onswitch.uf2
+build\pico2_w\switchbridge.uf2
 ```
 
 ## Troubleshooting

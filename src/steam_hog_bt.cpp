@@ -1,7 +1,7 @@
-#include "ds5onswitch/steam_hog_bt.h"
+#include "switch_bridge/steam_hog_bt.h"
 
-#include "ds5onswitch/steam_controller.h"
-#include "ds5onswitch/xbox_controller.h"
+#include "switch_bridge/steam_controller.h"
+#include "switch_bridge/xbox_controller.h"
 
 #include "ad_parser.h"
 #include "ble/gatt-service/hids_client.h"
@@ -19,7 +19,7 @@
 #include <cstdio>
 #include <cstring>
 
-namespace ds5onswitch {
+namespace switchbridge {
 
 namespace {
 
@@ -1109,4 +1109,4 @@ void steam_hog_bt_resume_after_switch2_wake()
     g_next_scan_ms = now_ms() + kReconnectDelayMs;
 }
 
-} // namespace ds5onswitch
+} // namespace switchbridge

@@ -1,17 +1,17 @@
-#include "ds5onswitch/controller_feedback.h"
+#include "switch_bridge/controller_feedback.h"
 
-#include "ds5onswitch/dualshock4_output.h"
-#include "ds5onswitch/dualsense_audio.h"
-#include "ds5onswitch/dualsense_bt.h"
-#include "ds5onswitch/dualsense_output.h"
-#include "ds5onswitch/steam_hog_bt.h"
-#include "ds5onswitch/switch_usb.h"
-#include "ds5onswitch/xbox_controller.h"
+#include "switch_bridge/dualshock4_output.h"
+#include "switch_bridge/dualsense_audio.h"
+#include "switch_bridge/classic_hid_bt.h"
+#include "switch_bridge/dualsense_output.h"
+#include "switch_bridge/steam_hog_bt.h"
+#include "switch_bridge/switch_usb.h"
+#include "switch_bridge/xbox_controller.h"
 
 #include <cstddef>
 #include <cstring>
 
-namespace ds5onswitch {
+namespace switchbridge {
 
 namespace {
 
@@ -27,9 +27,9 @@ uint32_t g_stop_at_ms = 0;
 uint8_t g_dualsense_sequence = 0;
 uint8_t g_switch_pro_rumble_counter = 0;
 
-DualSenseHapticCommand haptics_for_cue(ControllerFeedbackCue cue)
+HapticCommand haptics_for_cue(ControllerFeedbackCue cue)
 {
-    DualSenseHapticCommand command{};
+    HapticCommand command{};
     command.active = true;
     switch (cue) {
     case ControllerFeedbackCue::Connected:
@@ -49,7 +49,7 @@ DualSenseHapticCommand haptics_for_cue(ControllerFeedbackCue cue)
 }
 
 SwitchUsbFeedback switch_feedback_for_haptics(
-    const DualSenseHapticCommand &command)
+    const HapticCommand &command)
 {
     SwitchUsbFeedback feedback{};
     feedback.has_rumble = true;
@@ -57,7 +57,7 @@ SwitchUsbFeedback switch_feedback_for_haptics(
     return feedback;
 }
 
-bool send_dualsense_feedback(const DualSenseHapticCommand &command)
+bool send_dualsense_feedback(const HapticCommand &command)
 {
     DualSenseOutputState state{};
     state.reset();
@@ -67,11 +67,11 @@ bool send_dualsense_feedback(const DualSenseHapticCommand &command)
     } else {
         state.clear_motors();
     }
-    return dualsense_bt_send_output_report(
+    return classic_hid_send_dualsense_output_report(
         state.build_report(g_dualsense_sequence++));
 }
 
-bool send_dualshock4_feedback(const DualSenseHapticCommand &command)
+bool send_dualshock4_feedback(const HapticCommand &command)
 {
     DualShock4OutputState state{};
     state.reset();
@@ -81,15 +81,15 @@ bool send_dualshock4_feedback(const DualSenseHapticCommand &command)
         state.clear_motors();
     }
     const DualShock4BtOutputReport report = state.build_report();
-    return dualsense_bt_send_raw_output_report(report.data(), report.size());
+    return classic_hid_send_raw_output_report(report.data(), report.size());
 }
 
-bool send_xbox_classic_feedback(const DualSenseHapticCommand &command)
+bool send_xbox_classic_feedback(const HapticCommand &command)
 {
     uint8_t report[kXboxRumbleReportSize]{};
     const std::size_t len =
         build_xbox_rumble_output(command, report, sizeof(report));
-    return len != 0 && dualsense_bt_send_raw_output_report(report, len);
+    return len != 0 && classic_hid_send_raw_output_report(report, len);
 }
 
 bool send_switch_pro_feedback(bool active)
@@ -101,16 +101,16 @@ bool send_switch_pro_feedback(bool active)
                                    : kSwitchProSilentRumble;
     std::memcpy(report + 2u, packet, sizeof(kSwitchProWeakRumble));
     std::memcpy(report + 6u, packet, sizeof(kSwitchProWeakRumble));
-    return dualsense_bt_send_raw_output_report(report, sizeof(report));
+    return classic_hid_send_raw_output_report(report, sizeof(report));
 }
 
-bool send_classic_feedback(const DualSenseHapticCommand &command)
+bool send_classic_feedback(const HapticCommand &command)
 {
-    if (!dualsense_bt_is_connected()) {
+    if (!classic_hid_is_connected()) {
         return false;
     }
 
-    switch (dualsense_bt_controller_kind()) {
+    switch (classic_hid_controller_kind()) {
     case BtControllerKind::DualSense:
         return send_dualsense_feedback(command);
     case BtControllerKind::DualShock4:
@@ -125,7 +125,7 @@ bool send_classic_feedback(const DualSenseHapticCommand &command)
     return false;
 }
 
-bool send_hogp_feedback(const DualSenseHapticCommand &command)
+bool send_hogp_feedback(const HapticCommand &command)
 {
     if (!steam_hog_bt_is_connected()) {
         return false;
@@ -134,7 +134,7 @@ bool send_hogp_feedback(const DualSenseHapticCommand &command)
         switch_feedback_for_haptics(command));
 }
 
-bool send_feedback(const DualSenseHapticCommand &command)
+bool send_feedback(const HapticCommand &command)
 {
     const bool classic_sent = send_classic_feedback(command);
     const bool hogp_sent = send_hogp_feedback(command);
@@ -161,10 +161,10 @@ void controller_feedback_service(uint32_t now_ms)
 
     if (g_stop_pending &&
         static_cast<int32_t>(now_ms - g_stop_at_ms) >= 0) {
-        DualSenseHapticCommand stop{};
+        HapticCommand stop{};
         (void)send_feedback(stop);
         g_stop_pending = false;
     }
 }
 
-} // namespace ds5onswitch
+} // namespace switchbridge

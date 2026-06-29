@@ -1,7 +1,7 @@
-#include "ds5onswitch/bootsel_button.h"
+#include "switch_bridge/bootsel_button.h"
 
-#include "ds5onswitch/debug_flags.h"
-#include "ds5onswitch/dualsense_bt.h"
+#include "switch_bridge/debug_flags.h"
+#include "switch_bridge/classic_hid_bt.h"
 
 #include "btstack_tlv.h"
 
@@ -20,7 +20,7 @@
 
 #include <cstdio>
 
-namespace ds5onswitch {
+namespace switchbridge {
 namespace {
 
 // Gesture thresholds, sampled frequently enough that a held BOOTSEL button can
@@ -175,7 +175,7 @@ void button_dispatch(int clicks)
     if (clicks <= 1) {
         button_toggle_normal_led();
     } else if (clicks == 2) {
-        dualsense_bt_bootsel_click_action(); // double click -> pair / switch controller
+        classic_hid_bootsel_click_action(); // double click -> pair / switch controller
     } else if (clicks == 3) {
         reboot_to_app();
     } else if (clicks == 4) {
@@ -229,7 +229,7 @@ void __not_in_flash_func(bootsel_button_task)()
             button_press_samples = 0;
             if (button_hold_pending) {
                 button_hold_pending = false;
-                dualsense_bt_forget_pairings();
+                classic_hid_forget_pairings();
                 button_start_clear_flash();
             }
         }
@@ -286,4 +286,4 @@ bool bootsel_button_led_override(bool &enabled)
     return true;
 }
 
-} // namespace ds5onswitch
+} // namespace switchbridge

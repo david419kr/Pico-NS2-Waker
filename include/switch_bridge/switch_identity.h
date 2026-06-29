@@ -3,7 +3,7 @@
 #include <array>
 #include <cstdint>
 
-namespace ds5onswitch {
+namespace switchbridge {
 
 using SwitchControllerBdAddr = std::array<uint8_t, 6>;
 
@@ -30,4 +30,4 @@ const SwitchControllerBdAddr &switch_identity_bd_addr();
 // zero or all 0xff. Call once at boot after the CYW43 radio MAC is known.
 void switch_identity_set_bd_addr(const SwitchControllerBdAddr &addr);
 
-} // namespace ds5onswitch
+} // namespace switchbridge

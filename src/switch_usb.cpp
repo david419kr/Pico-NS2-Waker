@@ -1,12 +1,12 @@
-#include "ds5onswitch/switch_usb.h"
+#include "switch_bridge/switch_usb.h"
 
-#include "ds5onswitch/switch_identity.h"
-#include "ds5onswitch/switch_pro.h"
+#include "switch_bridge/switch_identity.h"
+#include "switch_bridge/switch_pro.h"
 
 #include <algorithm>
 #include <cstring>
 
-namespace ds5onswitch {
+namespace switchbridge {
 
 namespace {
 
@@ -522,4 +522,4 @@ void SwitchUsbEmulator::handle_subcommand_state(uint8_t subcommand,
     }
 }
 
-} // namespace ds5onswitch
+} // namespace switchbridge

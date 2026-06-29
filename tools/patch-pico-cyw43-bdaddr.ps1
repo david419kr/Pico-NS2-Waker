@@ -7,7 +7,7 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-# DS5onSwitch wake approach (current):
+# SwitchBridge wake approach (current):
 #
 # We no longer override the controller's real public BT/BLE address in the Pico
 # SDK CYW43 BTstack transport. Earlier branches hardcoded a stolen anomalous
@@ -33,23 +33,23 @@ $StockBlock = "    bd_addr_t addr;`r`n" +
     "    hci_set_chipset(btstack_chipset_cyw43_instance());`r`n" +
     "    hci_set_bd_addr(addr);"
 
-if ($Source -notlike '*DS5onSwitch:*' -and
+if ($Source -notlike '*SwitchBridge:*' -and
     $Source -like '*cyw43_hal_get_mac(0, (uint8_t*)&addr);*') {
-    Write-Host "[ds5onswitch] CYW43 BT address already stock (factory MAC + 1): $TransportPath" -ForegroundColor DarkGray
+    Write-Host "[switchbridge] CYW43 BT address already stock (factory MAC + 1): $TransportPath" -ForegroundColor DarkGray
     return
 }
 
-# Match any DS5onSwitch override block we may have written previously and
+# Match any project override block we may have written previously and
 # replace it with the stock SDK code so the Pico keeps its own factory address.
-$PatchedPattern = '(?s)    bd_addr_t addr = \{0x[0-9a-fA-F]{2}, 0x[0-9a-fA-F]{2}, 0x[0-9a-fA-F]{2}, 0x[0-9a-fA-F]{2}, 0x[0-9a-fA-F]{2}, 0x[0-9a-fA-F]{2}\};\s+    hci_set_chipset\(btstack_chipset_cyw43_instance\(\)\);\s+    // DS5onSwitch:.*?hci_set_bd_addr\(addr\);'
+$PatchedPattern = '(?s)    bd_addr_t addr = \{0x[0-9a-fA-F]{2}, 0x[0-9a-fA-F]{2}, 0x[0-9a-fA-F]{2}, 0x[0-9a-fA-F]{2}, 0x[0-9a-fA-F]{2}, 0x[0-9a-fA-F]{2}\};\s+    hci_set_chipset\(btstack_chipset_cyw43_instance\(\)\);\s+    // [^\r\n]*?:.*?hci_set_bd_addr\(addr\);'
 
 if ([regex]::IsMatch($Source, $PatchedPattern)) {
     $Restored = [regex]::Replace($Source, $PatchedPattern, [System.Text.RegularExpressions.MatchEvaluator] { param($m) $StockBlock }, 1)
     if ($Restored -ne $Source) {
         Set-Content -LiteralPath $TransportPath -Value $Restored -NoNewline
-        Write-Host "[ds5onswitch] Restored stock CYW43 BT address (factory MAC + 1): $TransportPath" -ForegroundColor Yellow
+        Write-Host "[switchbridge] Restored stock CYW43 BT address (factory MAC + 1): $TransportPath" -ForegroundColor Yellow
     }
     return
 }
 
-throw "Could not find a known CYW43 BD_ADDR block (stock or DS5onSwitch-patched) in $TransportPath"
+throw "Could not find a known CYW43 BD_ADDR block (stock or project-patched) in $TransportPath"

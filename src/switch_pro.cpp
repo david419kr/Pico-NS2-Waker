@@ -1,8 +1,8 @@
-#include "ds5onswitch/switch_pro.h"
+#include "switch_bridge/switch_pro.h"
 
 #include <algorithm>
 
-namespace ds5onswitch {
+namespace switchbridge {
 
 namespace {
 
@@ -244,4 +244,4 @@ bool parse_switch_pro_bt_report(const uint8_t *report, std::size_t size,
     return parse_switch_pro_input_report(report, size, out);
 }
 
-} // namespace ds5onswitch
+} // namespace switchbridge

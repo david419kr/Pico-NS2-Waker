@@ -1,16 +1,16 @@
-#include "ds5onswitch/mapper.h"
+#include "switch_bridge/mapper.h"
 
 #include <algorithm>
 #include <cstdint>
 
-namespace ds5onswitch {
+namespace switchbridge {
 
 namespace {
 
 constexpr int32_t kSwitchAccelCountsPerG = 4096;
-constexpr int32_t kDualSenseAccelCountsPerG = 8192;
+constexpr int32_t kPlayStationAccelCountsPerG = 8192;
 constexpr int32_t kSwitchGyroCountsPerDpsMilli = 14247;
-constexpr int32_t kDualSenseGyroCountsPerDps = 1024;
+constexpr int32_t kPlayStationGyroCountsPerDps = 1024;
 constexpr uint32_t kSwitchStickAxisMax = 0x0fffu;
 
 constexpr int16_t clamp_i16(int32_t value)
@@ -20,7 +20,7 @@ constexpr int16_t clamp_i16(int32_t value)
                    static_cast<int32_t>(INT16_MAX)));
 }
 
-constexpr bool pressed(uint32_t buttons, DualSenseButton button)
+constexpr bool pressed(uint32_t buttons, PlayStationButton button)
 {
     return (buttons & static_cast<uint32_t>(button)) != 0;
 }
@@ -31,34 +31,34 @@ constexpr int32_t div_round_nearest(int32_t numerator, int32_t denominator)
                           : (numerator - denominator / 2) / denominator;
 }
 
-void add_dpad(uint32_t &buttons, DualSenseDpad dpad)
+void add_dpad(uint32_t &buttons, PlayStationDpad dpad)
 {
     switch (dpad) {
-    case DualSenseDpad::Up:
+    case PlayStationDpad::Up:
         buttons |= kNsUp;
         break;
-    case DualSenseDpad::UpRight:
+    case PlayStationDpad::UpRight:
         buttons |= kNsUp | kNsRight;
         break;
-    case DualSenseDpad::Right:
+    case PlayStationDpad::Right:
         buttons |= kNsRight;
         break;
-    case DualSenseDpad::DownRight:
+    case PlayStationDpad::DownRight:
         buttons |= kNsDown | kNsRight;
         break;
-    case DualSenseDpad::Down:
+    case PlayStationDpad::Down:
         buttons |= kNsDown;
         break;
-    case DualSenseDpad::DownLeft:
+    case PlayStationDpad::DownLeft:
         buttons |= kNsDown | kNsLeft;
         break;
-    case DualSenseDpad::Left:
+    case PlayStationDpad::Left:
         buttons |= kNsLeft;
         break;
-    case DualSenseDpad::UpLeft:
+    case PlayStationDpad::UpLeft:
         buttons |= kNsUp | kNsLeft;
         break;
-    case DualSenseDpad::Neutral:
+    case PlayStationDpad::Neutral:
         break;
     }
 }
@@ -71,23 +71,23 @@ uint16_t axis8_to_switch12(uint8_t value)
         (static_cast<uint32_t>(value) * kSwitchStickAxisMax + 127u) / 255u);
 }
 
-int16_t dualsense_accel_to_switch(int16_t value)
+int16_t playstation_accel_to_switch(int16_t value)
 {
     const int32_t scaled =
         (static_cast<int32_t>(value) * kSwitchAccelCountsPerG) /
-        kDualSenseAccelCountsPerG;
+        kPlayStationAccelCountsPerG;
     return clamp_i16(scaled);
 }
 
-int16_t dualsense_gyro_to_switch(int16_t value)
+int16_t playstation_gyro_to_switch(int16_t value)
 {
     const int32_t scaled = div_round_nearest(
         static_cast<int32_t>(value) * kSwitchGyroCountsPerDpsMilli,
-        kDualSenseGyroCountsPerDps * 1000);
+        kPlayStationGyroCountsPerDps * 1000);
     return clamp_i16(scaled);
 }
 
-SwitchProState map_dualsense_to_switch(const DualSenseInput &input,
+SwitchProState map_playstation_to_switch(const PlayStationInput &input,
                                         MapperConfig config)
 {
     SwitchProState out{};
@@ -99,48 +99,48 @@ SwitchProState map_dualsense_to_switch(const DualSenseInput &input,
     out.right_y = static_cast<uint16_t>(
         kSwitchStickAxisMax - axis8_to_switch12(input.right_y));
 
-    if (pressed(input.buttons, kDs5Cross)) {
+    if (pressed(input.buttons, kPsCross)) {
         out.buttons |= kNsB;
     }
-    if (pressed(input.buttons, kDs5Circle)) {
+    if (pressed(input.buttons, kPsCircle)) {
         out.buttons |= kNsA;
     }
-    if (pressed(input.buttons, kDs5Square)) {
+    if (pressed(input.buttons, kPsSquare)) {
         out.buttons |= kNsY;
     }
-    if (pressed(input.buttons, kDs5Triangle)) {
+    if (pressed(input.buttons, kPsTriangle)) {
         out.buttons |= kNsX;
     }
-    if (pressed(input.buttons, kDs5L1)) {
+    if (pressed(input.buttons, kPsL1)) {
         out.buttons |= kNsL;
     }
-    if (pressed(input.buttons, kDs5R1)) {
+    if (pressed(input.buttons, kPsR1)) {
         out.buttons |= kNsR;
     }
-    if (pressed(input.buttons, kDs5L2Button) ||
+    if (pressed(input.buttons, kPsL2Button) ||
         input.l2 >= config.trigger_button_threshold) {
         out.buttons |= kNsZL;
     }
-    if (pressed(input.buttons, kDs5R2Button) ||
+    if (pressed(input.buttons, kPsR2Button) ||
         input.r2 >= config.trigger_button_threshold) {
         out.buttons |= kNsZR;
     }
-    if (pressed(input.buttons, kDs5Create)) {
+    if (pressed(input.buttons, kPsCreate)) {
         out.buttons |= kNsMinus;
     }
-    if (pressed(input.buttons, kDs5Options)) {
+    if (pressed(input.buttons, kPsOptions)) {
         out.buttons |= kNsPlus;
     }
-    if (pressed(input.buttons, kDs5L3)) {
+    if (pressed(input.buttons, kPsL3)) {
         out.buttons |= kNsLeftStick;
     }
-    if (pressed(input.buttons, kDs5R3)) {
+    if (pressed(input.buttons, kPsR3)) {
         out.buttons |= kNsRightStick;
     }
-    if (pressed(input.buttons, kDs5Ps)) {
+    if (pressed(input.buttons, kPsButton)) {
         out.buttons |= kNsHome;
     }
-    if (pressed(input.buttons, kDs5TouchpadClick)) {
+    if (pressed(input.buttons, kPsTouchpadClick)) {
         out.buttons |= kNsCapture;
     }
     add_dpad(out.buttons, input.dpad);
@@ -148,23 +148,23 @@ SwitchProState map_dualsense_to_switch(const DualSenseInput &input,
     if (input.has_imu) {
         out.has_imu = true;
         if (config.use_nrf5340_switch_motion_axes) {
-            out.accel_x = dualsense_accel_to_switch(clamp_i16(-input.accel_z));
-            out.accel_y = dualsense_accel_to_switch(clamp_i16(-input.accel_x));
-            out.accel_z = dualsense_accel_to_switch(input.accel_y);
-            out.gyro_x = dualsense_gyro_to_switch(clamp_i16(-input.gyro_y));
-            out.gyro_y = dualsense_gyro_to_switch(clamp_i16(-input.gyro_x));
-            out.gyro_z = dualsense_gyro_to_switch(input.gyro_z);
+            out.accel_x = playstation_accel_to_switch(clamp_i16(-input.accel_z));
+            out.accel_y = playstation_accel_to_switch(clamp_i16(-input.accel_x));
+            out.accel_z = playstation_accel_to_switch(input.accel_y);
+            out.gyro_x = playstation_gyro_to_switch(clamp_i16(-input.gyro_y));
+            out.gyro_y = playstation_gyro_to_switch(clamp_i16(-input.gyro_x));
+            out.gyro_z = playstation_gyro_to_switch(input.gyro_z);
         } else {
-            out.accel_x = dualsense_accel_to_switch(input.accel_x);
-            out.accel_y = dualsense_accel_to_switch(input.accel_y);
-            out.accel_z = dualsense_accel_to_switch(input.accel_z);
-            out.gyro_x = dualsense_gyro_to_switch(input.gyro_x);
-            out.gyro_y = dualsense_gyro_to_switch(input.gyro_y);
-            out.gyro_z = dualsense_gyro_to_switch(input.gyro_z);
+            out.accel_x = playstation_accel_to_switch(input.accel_x);
+            out.accel_y = playstation_accel_to_switch(input.accel_y);
+            out.accel_z = playstation_accel_to_switch(input.accel_z);
+            out.gyro_x = playstation_gyro_to_switch(input.gyro_x);
+            out.gyro_y = playstation_gyro_to_switch(input.gyro_y);
+            out.gyro_z = playstation_gyro_to_switch(input.gyro_z);
         }
     }
 
     return out;
 }
 
-} // namespace ds5onswitch
+} // namespace switchbridge

@@ -1,13 +1,13 @@
-#include "ds5onswitch/dualsense_bt.h"
+#include "switch_bridge/classic_hid_bt.h"
 
-#include "ds5onswitch/bt_debug_log.h"
-#include "ds5onswitch/dualshock4_output.h"
-#include "ds5onswitch/dualshock4_report.h"
-#include "ds5onswitch/dualsense_report.h"
-#include "ds5onswitch/steam_hog_bt.h"
-#include "ds5onswitch/switch_identity.h"
-#include "ds5onswitch/switch_usb.h"
-#include "ds5onswitch/xbox_controller.h"
+#include "switch_bridge/bt_debug_log.h"
+#include "switch_bridge/dualshock4_output.h"
+#include "switch_bridge/dualshock4_report.h"
+#include "switch_bridge/dualsense_report.h"
+#include "switch_bridge/steam_hog_bt.h"
+#include "switch_bridge/switch_identity.h"
+#include "switch_bridge/switch_usb.h"
+#include "switch_bridge/xbox_controller.h"
 
 #include "btstack_event.h"
 #include "btstack_tlv.h"
@@ -26,7 +26,7 @@
 #include <cstdio>
 #include <cstring>
 
-namespace ds5onswitch {
+namespace switchbridge {
 
 namespace {
 
@@ -75,7 +75,7 @@ bool g_hid_interrupt_opening = false;
 bool g_device_found = false;
 bool g_local_acl_initiated = false;
 uint8_t g_output_sequence = 0;
-DualSenseBtDataCallback g_data_callback = nullptr;
+ClassicHidDataCallback g_data_callback = nullptr;
 queue_t g_send_fifo;
 bd_addr_t g_blacklisted_addrs[NVM_NUM_LINK_KEYS]{};
 int g_blacklisted_addr_count = 0;
@@ -388,7 +388,7 @@ void send_initial_output()
     DualSenseOutputState state{};
     state.reset();
     const DualSenseBtOutputReport report = state.build_report(g_output_sequence++);
-    dualsense_bt_send_output_report(report);
+    classic_hid_send_dualsense_output_report(report);
 }
 
 void send_dualshock4_initial_output()
@@ -403,7 +403,7 @@ void send_dualshock4_initial_output()
     DualShock4OutputState state{};
     state.reset();
     const DualShock4BtOutputReport report = state.build_report();
-    (void)dualsense_bt_send_raw_output_report(report.data(), report.size());
+    (void)classic_hid_send_raw_output_report(report.data(), report.size());
 }
 
 void send_switch_pro_subcommand(uint8_t subcommand, uint8_t arg)
@@ -416,7 +416,7 @@ void send_switch_pro_subcommand(uint8_t subcommand, uint8_t arg)
         subcommand,
         arg,
     };
-    (void)dualsense_bt_send_raw_output_report(report, sizeof(report));
+    (void)classic_hid_send_raw_output_report(report, sizeof(report));
 }
 
 void send_switch_pro_usb_command(uint8_t command)
@@ -425,7 +425,7 @@ void send_switch_pro_usb_command(uint8_t command)
         kSwitchOutputUsb,
         command,
     };
-    (void)dualsense_bt_send_raw_output_report(report, sizeof(report));
+    (void)classic_hid_send_raw_output_report(report, sizeof(report));
 }
 
 void send_switch_pro_init()
@@ -924,7 +924,7 @@ void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type,
                          1);
         } else {
             gap_drop_link_key_for_bd_addr(g_current_addr);
-            dualsense_bt_disconnect();
+            classic_hid_disconnect();
         }
         break;
 
@@ -996,7 +996,7 @@ void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type,
             }
             set_controller_kind(report_kind);
             if (g_data_callback != nullptr) {
-                g_data_callback(DualSenseBtChannel::Interrupt, packet, size);
+                g_data_callback(ClassicHidChannel::Interrupt, packet, size);
             }
         } else if (channel == g_hid_control_cid) {
             if (!g_logged_first_control_data) {
@@ -1010,7 +1010,7 @@ void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type,
             }
             set_controller_kind(kind_from_hid_report(packet, size));
             if (g_data_callback != nullptr) {
-                g_data_callback(DualSenseBtChannel::Control, packet, size);
+                g_data_callback(ClassicHidChannel::Control, packet, size);
             }
         } else {
             std::printf("[BT] L2CAP data on unknown cid=0x%04x len=%u\n",
@@ -1044,7 +1044,7 @@ void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type,
             } else if (psm == PSM_HID_INTERRUPT) {
                 g_hid_interrupt_cid = 0;
             }
-            (void)dualsense_bt_disconnect();
+            (void)classic_hid_disconnect();
             break;
         }
 
@@ -1119,7 +1119,7 @@ void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type,
             g_hid_interrupt_opening = false;
         }
         if (g_hid_control_cid == 0 && g_hid_interrupt_cid == 0) {
-            dualsense_bt_disconnect();
+            classic_hid_disconnect();
         }
         break;
     }
@@ -1151,12 +1151,12 @@ void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type,
 
 } // namespace
 
-void dualsense_bt_register_data_callback(DualSenseBtDataCallback callback)
+void classic_hid_register_data_callback(ClassicHidDataCallback callback)
 {
     g_data_callback = callback;
 }
 
-bool dualsense_bt_init()
+bool classic_hid_init()
 {
     queue_init(&g_send_fifo, sizeof(SendElement), kSendQueueDepth);
 
@@ -1195,23 +1195,23 @@ bool dualsense_bt_init()
     return hci_power_control(HCI_POWER_ON) == 0;
 }
 
-bool __not_in_flash_func(dualsense_bt_is_connected)()
+bool __not_in_flash_func(classic_hid_is_connected)()
 {
     return g_hid_interrupt_cid != 0;
 }
 
-BtControllerKind __not_in_flash_func(dualsense_bt_controller_kind)()
+BtControllerKind __not_in_flash_func(classic_hid_controller_kind)()
 {
     return g_controller_kind;
 }
 
-bool __not_in_flash_func(dualsense_bt_send_output_report)(
+bool __not_in_flash_func(classic_hid_send_dualsense_output_report)(
     const DualSenseBtOutputReport &report)
 {
-    return dualsense_bt_send_raw_output_report(report.data(), report.size());
+    return classic_hid_send_raw_output_report(report.data(), report.size());
 }
 
-bool __not_in_flash_func(dualsense_bt_send_raw_output_report)(
+bool __not_in_flash_func(classic_hid_send_raw_output_report)(
     const uint8_t *report, std::size_t size)
 {
     if (g_hid_interrupt_cid == 0) {
@@ -1236,7 +1236,7 @@ bool __not_in_flash_func(dualsense_bt_send_raw_output_report)(
     return true;
 }
 
-bool __not_in_flash_func(dualsense_bt_power_off)()
+bool __not_in_flash_func(classic_hid_power_off_active_controller)()
 {
     if (g_controller_kind != BtControllerKind::DualSense ||
         g_hid_control_cid == 0) {
@@ -1266,7 +1266,7 @@ bool __not_in_flash_func(dualsense_bt_power_off)()
     return true;
 }
 
-bool dualsense_bt_disconnect()
+bool classic_hid_disconnect()
 {
     if (g_acl_handle == HCI_CON_HANDLE_INVALID) {
         return false;
@@ -1277,7 +1277,7 @@ bool dualsense_bt_disconnect()
     return true;
 }
 
-void dualsense_bt_pause_for_switch2_wake()
+void classic_hid_pause_for_switch2_wake()
 {
     g_paused_for_switch2_wake = true;
     g_device_found = false;
@@ -1286,20 +1286,20 @@ void dualsense_bt_pause_for_switch2_wake()
     gap_discoverable_control(false);
 }
 
-void dualsense_bt_resume_after_switch2_wake()
+void classic_hid_resume_after_switch2_wake()
 {
     g_paused_for_switch2_wake = false;
-    if (g_acl_handle != HCI_CON_HANDLE_INVALID || dualsense_bt_is_connected()) {
+    if (g_acl_handle != HCI_CON_HANDLE_INVALID || classic_hid_is_connected()) {
         return;
     }
     maybe_start_inquiry();
 }
 
-void dualsense_bt_bootsel_click_action()
+void classic_hid_bootsel_click_action()
 {
     if (g_acl_handle != HCI_CON_HANDLE_INVALID) {
         std::printf("[BT] BOOTSEL click - disconnect current ACL\n");
-        (void)dualsense_bt_disconnect();
+        (void)classic_hid_disconnect();
     } else {
         std::printf("[BT] BOOTSEL click - fresh inquiry\n");
         reset_connection_state();
@@ -1307,7 +1307,7 @@ void dualsense_bt_bootsel_click_action()
     }
 }
 
-void dualsense_bt_forget_pairings()
+void classic_hid_forget_pairings()
 {
     std::printf("[BT] BOOTSEL hold - forget all paired controllers\n");
 
@@ -1324,7 +1324,7 @@ void dualsense_bt_forget_pairings()
 
     if (g_acl_handle != HCI_CON_HANDLE_INVALID) {
         blacklist_add_unique(g_current_addr);
-        (void)dualsense_bt_disconnect();
+        (void)classic_hid_disconnect();
     }
 
     gap_delete_all_link_keys();
@@ -1334,7 +1334,7 @@ void dualsense_bt_forget_pairings()
     }
 }
 
-void dualsense_bt_persist_blacklist_if_dirty()
+void classic_hid_persist_blacklist_if_dirty()
 {
     if (!g_blacklist_dirty ||
         now_ms() - g_blacklist_dirty_ms < kBlacklistPersistDelayMs) {
@@ -1345,4 +1345,4 @@ void dualsense_bt_persist_blacklist_if_dirty()
     blacklist_persist();
 }
 
-} // namespace ds5onswitch
+} // namespace switchbridge

@@ -10,7 +10,7 @@ endif ()
 
 include(pico_sdk_import.cmake)
 
-project(ds5onswitch C CXX ASM)
+project(switchbridge C CXX ASM)
 
 pico_sdk_init()
 
@@ -27,7 +27,7 @@ FetchContent_Declare(opus
 )
 FetchContent_MakeAvailable(opus)
 
-add_library(ds5onswitch_core
+add_library(switchbridge_core
     src/dualshock4_output.cpp
     src/dualshock4_report.cpp
     src/dualsense_output.cpp
@@ -44,25 +44,25 @@ add_library(ds5onswitch_core
     src/xbox_controller.cpp
 )
 
-target_include_directories(ds5onswitch_core PUBLIC
+target_include_directories(switchbridge_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-target_compile_options(ds5onswitch_core PRIVATE
+target_compile_options(switchbridge_core PRIVATE
     -Wall
     -Wextra
 )
 
-target_link_libraries(ds5onswitch_core PUBLIC
+target_link_libraries(switchbridge_core PUBLIC
     pico_stdlib
 )
 
-add_executable(ds5onswitch
+add_executable(switchbridge
     src/bootsel_button.cpp
     src/bt_debug_log.cpp
     src/controller_feedback.cpp
     src/dualsense_audio.cpp
-    src/dualsense_bt.cpp
+    src/classic_hid_bt.cpp
     src/main.cpp
     src/ram_mem.c
     src/steam_hog_bt.cpp
@@ -87,10 +87,10 @@ add_custom_command(
 )
 add_custom_target(opus_ram_relocate ALL
     DEPENDS ${CMAKE_BINARY_DIR}/opus_ram_relocate.stamp)
-add_dependencies(ds5onswitch opus_ram_relocate)
+add_dependencies(switchbridge opus_ram_relocate)
 
-target_link_libraries(ds5onswitch PRIVATE
-    ds5onswitch_core
+target_link_libraries(switchbridge PRIVATE
+    switchbridge_core
     pico_stdlib
     pico_cyw43_arch_poll
     pico_btstack_ble
@@ -101,7 +101,7 @@ target_link_libraries(ds5onswitch PRIVATE
     opus
 )
 
-target_compile_definitions(ds5onswitch PRIVATE
+target_compile_definitions(switchbridge PRIVATE
     PICO_FLASH_ASSUME_CORE1_SAFE=1
     CYW43_LWIP=0
     PICO_STDIO_USB_USE_DEFAULT_DESCRIPTORS=0
@@ -109,14 +109,14 @@ target_compile_definitions(ds5onswitch PRIVATE
     PICO_STDIO_USB_ENABLE_RESET_VIA_VENDOR_INTERFACE=0
 )
 
-target_include_directories(ds5onswitch PRIVATE
+target_include_directories(switchbridge PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
 function(relocate_to_ram _suffix _renames _comment)
-    add_custom_command(TARGET ds5onswitch PRE_LINK
+    add_custom_command(TARGET switchbridge PRE_LINK
         COMMAND ${CMAKE_COMMAND}
-            "-DOBJROOT=${CMAKE_BINARY_DIR}/CMakeFiles/ds5onswitch.dir"
+            "-DOBJROOT=${CMAKE_BINARY_DIR}/CMakeFiles/switchbridge.dir"
             "-DOBJCOPY=${CMAKE_OBJCOPY}"
             "-DSUFFIX=${_suffix}"
             "-DRENAMES=${_renames}"
@@ -174,8 +174,8 @@ relocate_to_ram(lib/btstack/src/btstack_run_loop.c.o
     ".text.btstack_run_loop_base_poll_data_sources=.time_critical.btstack_run_loop_base_poll_data_sources|.text.btstack_run_loop_poll_data_sources_from_irq=.time_critical.btstack_run_loop_poll_data_sources_from_irq"
     "Relocate BTstack run-loop poll to RAM")
 
-pico_set_program_name(ds5onswitch "ds5onswitch")
-pico_set_program_version(ds5onswitch "0.1.0-dev")
-pico_enable_stdio_uart(ds5onswitch 1)
-pico_enable_stdio_usb(ds5onswitch 0)
-pico_add_extra_outputs(ds5onswitch)
+pico_set_program_name(switchbridge "switchbridge")
+pico_set_program_version(switchbridge "0.1.0-dev")
+pico_enable_stdio_uart(switchbridge 1)
+pico_enable_stdio_usb(switchbridge 0)
+pico_add_extra_outputs(switchbridge)

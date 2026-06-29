@@ -1,6 +1,6 @@
-#include "ds5onswitch/bt_debug_log.h"
+#include "switch_bridge/bt_debug_log.h"
 
-#include "ds5onswitch/debug_flags.h"
+#include "switch_bridge/debug_flags.h"
 
 #include "hardware/flash.h"
 #include "pico/btstack_flash_bank.h"
@@ -12,7 +12,7 @@
 
 extern "C" char __flash_binary_end;
 
-namespace ds5onswitch {
+namespace switchbridge {
 namespace {
 
 constexpr uint32_t kLogMagic = 0x354c4447u; // "GDL5"
@@ -188,4 +188,4 @@ uint32_t bt_debug_log_size()
     return static_cast<uint32_t>(kLogSize);
 }
 
-} // namespace ds5onswitch
+} // namespace switchbridge

@@ -1,12 +1,12 @@
 #pragma once
 
-#include "ds5onswitch/haptics.h"
+#include "switch_bridge/haptics.h"
 
 #include <array>
 #include <cstddef>
 #include <cstdint>
 
-namespace ds5onswitch {
+namespace switchbridge {
 
 constexpr std::size_t kDualShock4BtOutputReportSize = 78;
 
@@ -16,7 +16,7 @@ using DualShock4BtOutputReport =
 class DualShock4OutputState {
 public:
     void reset();
-    void apply_haptics(const DualSenseHapticCommand &command);
+    void apply_haptics(const HapticCommand &command);
     void clear_motors();
     bool motors_active() const;
 
@@ -30,4 +30,4 @@ private:
 uint32_t dualshock4_output_crc32(const uint8_t *data, std::size_t size);
 void fill_dualshock4_output_crc(DualShock4BtOutputReport &report);
 
-} // namespace ds5onswitch
+} // namespace switchbridge

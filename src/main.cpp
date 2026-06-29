@@ -1,24 +1,24 @@
-#include "ds5onswitch/mapper.h"
-#include "ds5onswitch/bootsel_button.h"
-#include "ds5onswitch/bt_debug_log.h"
-#include "ds5onswitch/controller_feedback.h"
-#include "ds5onswitch/debug_flags.h"
-#include "ds5onswitch/dualshock4_output.h"
-#include "ds5onswitch/dualshock4_report.h"
-#include "ds5onswitch/dualsense_audio.h"
-#include "ds5onswitch/dualsense_bt.h"
-#include "ds5onswitch/dualsense_output.h"
-#include "ds5onswitch/dualsense_report.h"
-#include "ds5onswitch/procon2_handshake.h"
-#include "ds5onswitch/persona_combo_filter.h"
-#include "ds5onswitch/steam_controller.h"
-#include "ds5onswitch/steam_hog_bt.h"
-#include "ds5onswitch/switch_identity.h"
-#include "ds5onswitch/switch_pro.h"
-#include "ds5onswitch/switch_usb.h"
-#include "ds5onswitch/switch2_wake_runtime.h"
-#include "ds5onswitch/usb_descriptors.h"
-#include "ds5onswitch/xbox_controller.h"
+#include "switch_bridge/mapper.h"
+#include "switch_bridge/bootsel_button.h"
+#include "switch_bridge/bt_debug_log.h"
+#include "switch_bridge/controller_feedback.h"
+#include "switch_bridge/debug_flags.h"
+#include "switch_bridge/dualshock4_output.h"
+#include "switch_bridge/dualshock4_report.h"
+#include "switch_bridge/dualsense_audio.h"
+#include "switch_bridge/classic_hid_bt.h"
+#include "switch_bridge/dualsense_output.h"
+#include "switch_bridge/dualsense_report.h"
+#include "switch_bridge/procon2_handshake.h"
+#include "switch_bridge/persona_combo_filter.h"
+#include "switch_bridge/steam_controller.h"
+#include "switch_bridge/steam_hog_bt.h"
+#include "switch_bridge/switch_identity.h"
+#include "switch_bridge/switch_pro.h"
+#include "switch_bridge/switch_usb.h"
+#include "switch_bridge/switch2_wake_runtime.h"
+#include "switch_bridge/usb_descriptors.h"
+#include "switch_bridge/xbox_controller.h"
 
 #include "bsp/board_api.h"
 #include "cyw43.h"
@@ -30,7 +30,7 @@
 #include <array>
 #include <cstring>
 
-using namespace ds5onswitch;
+using namespace switchbridge;
 
 namespace {
 
@@ -66,7 +66,7 @@ PersonaComboFilter g_persona_combo_filter;
 SwitchReport g_procon_passthrough_report{};
 bool g_procon_passthrough_valid = false;
 uint32_t g_debug_log_read_offset = 0;
-DualSenseHapticCommand g_xbox_haptics{};
+HapticCommand g_xbox_haptics{};
 uint32_t g_last_xbox_output_ms = 0;
 bool g_xbox_output_dirty = false;
 XboxControllerInput g_xbox_input{};
@@ -97,7 +97,7 @@ void configure_switch_identity_from_radio()
     }
     if (!any_nonzero || !any_not_ff) {
         // cyw43_state.mac is still zero before HCI reaches WORKING on some
-        // boots. Do not turn that into 00:00:00:00:00:01; dualsense_bt.cpp
+        // boots. Do not turn that into 00:00:00:00:00:01; classic_hid_bt.cpp
         // will set the identity from BTstack's real local BD_ADDR later.
         return;
     }
@@ -190,7 +190,7 @@ void select_switch_pro_persona()
         return;
     }
     usb_descriptors_set_controller_persona(UsbControllerPersona::SwitchPro);
-    g_usb_persona = dualsense_bt_controller_kind() == BtControllerKind::DualSense
+    g_usb_persona = classic_hid_controller_kind() == BtControllerKind::DualSense
         ? dualsense_audio_desired_persona()
         : UsbAudioPersona::HidOnly;
     usb_descriptors_set_audio_persona(g_usb_persona);
@@ -265,27 +265,27 @@ bool copy_switch_pro_full_report_from_bt(const uint8_t *data, std::size_t size,
 
 bool bt_controller_is_dualsense()
 {
-    return dualsense_bt_controller_kind() == BtControllerKind::DualSense;
+    return classic_hid_controller_kind() == BtControllerKind::DualSense;
 }
 
 bool bt_controller_is_dualshock4()
 {
-    return dualsense_bt_controller_kind() == BtControllerKind::DualShock4;
+    return classic_hid_controller_kind() == BtControllerKind::DualShock4;
 }
 
 bool bt_controller_is_switch_pro()
 {
-    return dualsense_bt_controller_kind() == BtControllerKind::SwitchPro;
+    return classic_hid_controller_kind() == BtControllerKind::SwitchPro;
 }
 
 bool bt_controller_is_xbox()
 {
-    return dualsense_bt_controller_kind() == BtControllerKind::Xbox;
+    return classic_hid_controller_kind() == BtControllerKind::Xbox;
 }
 
 bool bt_controller_connected()
 {
-    return dualsense_bt_is_connected() || steam_hog_bt_is_connected();
+    return classic_hid_is_connected() || steam_hog_bt_is_connected();
 }
 
 bool steam_hog_controller_is_xbox()
@@ -330,11 +330,11 @@ void __not_in_flash_func(handle_xbox_input)(XboxControllerInput input)
     g_switch_usb.set_state(state);
 }
 
-void __not_in_flash_func(on_dualsense_bt_data)(DualSenseBtChannel channel,
+void __not_in_flash_func(on_classic_hid_data)(ClassicHidChannel channel,
                                                const uint8_t *data,
                                                std::size_t size)
 {
-    if (channel != DualSenseBtChannel::Interrupt) {
+    if (channel != ClassicHidChannel::Interrupt) {
         return;
     }
 
@@ -382,7 +382,7 @@ void __not_in_flash_func(on_dualsense_bt_data)(DualSenseBtChannel channel,
     }
 
     if (bt_controller_is_dualshock4()) {
-        DualSenseInput input{};
+        PlayStationInput input{};
         if (!parse_dualshock4_bt_report(data, size, input)) {
             return;
         }
@@ -397,9 +397,9 @@ void __not_in_flash_func(on_dualsense_bt_data)(DualSenseBtChannel channel,
             select_switch2_pro_persona();
         }
 
-        const bool home_down = (input.buttons & kDs5Ps) != 0;
+        const bool home_down = (input.buttons & kPsButton) != 0;
         const bool home_edge =
-            home_down && (g_last_ds4_buttons & kDs5Ps) == 0;
+            home_down && (g_last_ds4_buttons & kPsButton) == 0;
         g_last_ds4_buttons = input.buttons;
         if (home_edge) {
             g_home_wake_pending = true;
@@ -407,7 +407,7 @@ void __not_in_flash_func(on_dualsense_bt_data)(DualSenseBtChannel channel,
         }
 
         g_procon_passthrough_valid = false;
-        g_switch_usb.set_state(map_dualsense_to_switch(input));
+        g_switch_usb.set_state(map_playstation_to_switch(input));
         return;
     }
 
@@ -417,7 +417,7 @@ void __not_in_flash_func(on_dualsense_bt_data)(DualSenseBtChannel channel,
         return;
     }
 
-    DualSenseInput input{};
+    PlayStationInput input{};
     if (!parse_dualsense_bt_report(data, size, input)) {
         return;
     }
@@ -432,15 +432,15 @@ void __not_in_flash_func(on_dualsense_bt_data)(DualSenseBtChannel channel,
         select_switch2_pro_persona();
     }
 
-    const bool home_down = (input.buttons & kDs5Ps) != 0;
-    const bool home_edge = home_down && (g_last_ds_buttons & kDs5Ps) == 0;
+    const bool home_down = (input.buttons & kPsButton) != 0;
+    const bool home_edge = home_down && (g_last_ds_buttons & kPsButton) == 0;
     g_last_ds_buttons = input.buttons;
     if (home_edge) {
         g_home_wake_pending = true;
         g_home_wake_pending_ms = now;
     }
 
-    const bool mute_button_down = (input.buttons & kDs5Mute) != 0;
+    const bool mute_button_down = (input.buttons & kPsMute) != 0;
     if (mute_button_down && !g_ds_mute_button_down) {
         const bool muted = dualsense_audio_toggle_mic_muted();
         g_ds_output.set_mic_muted(muted);
@@ -457,7 +457,7 @@ void __not_in_flash_func(on_dualsense_bt_data)(DualSenseBtChannel channel,
         request_usb_reconnect();
     }
 
-    g_switch_usb.set_state(map_dualsense_to_switch(input));
+    g_switch_usb.set_state(map_playstation_to_switch(input));
 }
 
 void __not_in_flash_func(on_steam_hog_bt_data)(SteamHogBtControllerKind kind,
@@ -533,15 +533,15 @@ void __not_in_flash_func(forward_switch_output_to_bt_procon)(
         report[0] != kSwitchOutputRumbleOnly) {
         return;
     }
-    (void)dualsense_bt_send_raw_output_report(report.data(), size);
+    (void)classic_hid_send_raw_output_report(report.data(), size);
 }
 
-void __not_in_flash_func(service_dualsense_connection)()
+void __not_in_flash_func(service_classic_hid_connection)()
 {
     static bool was_connected = false;
     static BtControllerKind last_kind = BtControllerKind::Unknown;
-    const bool connected = dualsense_bt_is_connected();
-    const BtControllerKind kind = dualsense_bt_controller_kind();
+    const bool connected = classic_hid_is_connected();
+    const BtControllerKind kind = classic_hid_controller_kind();
     if (connected == was_connected && kind == last_kind) {
         return;
     }
@@ -582,9 +582,9 @@ void __not_in_flash_func(service_dualsense_connection)()
             tud_disconnect();
         }
 
-        DualSenseInput neutral{};
+        PlayStationInput neutral{};
         neutral.has_imu = true;
-        g_switch_usb.set_state(map_dualsense_to_switch(neutral));
+        g_switch_usb.set_state(map_playstation_to_switch(neutral));
         return;
     }
 
@@ -644,7 +644,7 @@ void __not_in_flash_func(service_steam_connection)()
         g_last_steam_buttons = 0;
         g_last_xbox_buttons = 0;
         g_xbox_input = {};
-        if (dualsense_bt_is_connected()) {
+        if (classic_hid_is_connected()) {
             return;
         }
         g_auto_wake_armed = false;
@@ -736,7 +736,7 @@ void __not_in_flash_func(service_switch2_wake_policy)()
 
 void __not_in_flash_func(service_dualsense_output)()
 {
-    if (!dualsense_bt_is_connected() || !bt_controller_is_dualsense()) {
+    if (!classic_hid_is_connected() || !bt_controller_is_dualsense()) {
         return;
     }
 
@@ -759,7 +759,7 @@ void __not_in_flash_func(service_dualsense_output)()
 
     const DualSenseBtOutputReport report =
         g_ds_output.build_report(g_ds_output_sequence++);
-    if (dualsense_bt_send_output_report(report)) {
+    if (classic_hid_send_dualsense_output_report(report)) {
         g_last_ds_output_ms = now;
         g_ds_output_dirty = false;
     }
@@ -767,7 +767,7 @@ void __not_in_flash_func(service_dualsense_output)()
 
 void __not_in_flash_func(service_dualshock4_output)()
 {
-    if (!dualsense_bt_is_connected() || !bt_controller_is_dualshock4()) {
+    if (!classic_hid_is_connected() || !bt_controller_is_dualshock4()) {
         return;
     }
 
@@ -783,7 +783,7 @@ void __not_in_flash_func(service_dualshock4_output)()
     }
 
     const DualShock4BtOutputReport report = g_ds4_output.build_report();
-    if (dualsense_bt_send_raw_output_report(report.data(), report.size())) {
+    if (classic_hid_send_raw_output_report(report.data(), report.size())) {
         g_last_ds4_output_ms = now;
         g_ds4_output_dirty = false;
     }
@@ -791,7 +791,7 @@ void __not_in_flash_func(service_dualshock4_output)()
 
 void __not_in_flash_func(service_xbox_output)()
 {
-    if (!dualsense_bt_is_connected() || !bt_controller_is_xbox()) {
+    if (!classic_hid_is_connected() || !bt_controller_is_xbox()) {
         return;
     }
 
@@ -810,7 +810,7 @@ void __not_in_flash_func(service_xbox_output)()
     const std::size_t len =
         build_xbox_rumble_output(g_xbox_haptics, report, sizeof(report));
     if (len != 0u &&
-        dualsense_bt_send_raw_output_report(report, len)) {
+        classic_hid_send_raw_output_report(report, len)) {
         g_last_xbox_output_ms = now;
         g_xbox_output_dirty = false;
     }
@@ -961,7 +961,7 @@ void __no_inline_not_in_flash_func(app_loop)()
         tud_task();
         service_usb_mount_tracking();
         steam_hog_bt_service(board_millis());
-        service_dualsense_connection();
+        service_classic_hid_connection();
         service_steam_connection();
         service_switch2_wake_policy();
         dualsense_audio_loop(g_ds_output, g_ds_output_sequence);
@@ -972,7 +972,7 @@ void __no_inline_not_in_flash_func(app_loop)()
         service_switch2_registration();
         service_usb_reports();
         service_usb_reconnect();
-        dualsense_bt_persist_blacklist_if_dirty();
+        classic_hid_persist_blacklist_if_dirty();
         service_led();
     }
 }
@@ -1003,14 +1003,14 @@ int main()
     usb_descriptors_set_audio_persona(UsbAudioPersona::HidOnly);
     dualsense_audio_init();
     switch2_wake_init();
-    dualsense_bt_register_data_callback(on_dualsense_bt_data);
+    classic_hid_register_data_callback(on_classic_hid_data);
     steam_hog_bt_register_data_callback(on_steam_hog_bt_data);
 
-    DualSenseInput neutral{};
+    PlayStationInput neutral{};
     neutral.has_imu = true;
-    g_switch_usb.set_state(map_dualsense_to_switch(neutral));
+    g_switch_usb.set_state(map_playstation_to_switch(neutral));
 
-    if (!dualsense_bt_init()) {
+    if (!classic_hid_init()) {
         return 1;
     }
 

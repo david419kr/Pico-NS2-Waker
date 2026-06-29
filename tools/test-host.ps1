@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$ToolsHome = "$env:USERPROFILE\.ds5onswitch-build"
+    [string]$ToolsHome = "$env:USERPROFILE\.switchbridge-build"
 )
 
 $ErrorActionPreference = 'Stop'
@@ -8,6 +8,13 @@ Set-StrictMode -Version Latest
 
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
 $EnvScript = Join-Path $ToolsHome 'env.ps1'
+if (-not (Test-Path $EnvScript)) {
+    $LegacyToolsHome = Join-Path $env:USERPROFILE ('.' + 'ds5' + 'on' + 'switch-build')
+    $LegacyEnvScript = Join-Path $LegacyToolsHome 'env.ps1'
+    if (Test-Path $LegacyEnvScript) {
+        $EnvScript = $LegacyEnvScript
+    }
+}
 if (Test-Path $EnvScript) {
     . $EnvScript
 }
@@ -41,4 +48,4 @@ $Exe = Join-Path $OutDir 'host_mapping_test.exe'
     -o $Exe
 
 & $Exe
-Write-Host "[ds5onswitch] Host mapping tests passed." -ForegroundColor Green
+Write-Host "[switchbridge] Host mapping tests passed." -ForegroundColor Green

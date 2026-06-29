@@ -1,12 +1,12 @@
 #pragma once
 
-#include "ds5onswitch/haptics.h"
-#include "ds5onswitch/types.h"
+#include "switch_bridge/haptics.h"
+#include "switch_bridge/types.h"
 
 #include <cstddef>
 #include <cstdint>
 
-namespace ds5onswitch {
+namespace switchbridge {
 
 constexpr uint16_t kXboxMicrosoftVid = 0x045e;
 constexpr uint8_t kXboxInputReportId = 0x01;
@@ -50,7 +50,7 @@ struct XboxControllerInput {
 bool parse_xbox_bt_report(const uint8_t *data, std::size_t size,
                           XboxControllerInput &out);
 SwitchProState map_xbox_to_switch(const XboxControllerInput &input);
-std::size_t build_xbox_rumble_output(const DualSenseHapticCommand &haptics,
+std::size_t build_xbox_rumble_output(const HapticCommand &haptics,
                                      uint8_t *out, std::size_t out_size);
 
-} // namespace ds5onswitch
+} // namespace switchbridge

@@ -1,6 +1,6 @@
-#include "ds5onswitch/dualshock4_output.h"
+#include "switch_bridge/dualshock4_output.h"
 
-#include "ds5onswitch/dualsense_output.h"
+#include "switch_bridge/dualsense_output.h"
 
 #if __has_include("pico.h")
 #include "pico.h"
@@ -10,7 +10,7 @@
 
 #include <algorithm>
 
-namespace ds5onswitch {
+namespace switchbridge {
 
 namespace {
 
@@ -41,7 +41,7 @@ void __not_in_flash_func(DualShock4OutputState::reset)()
 }
 
 void __not_in_flash_func(DualShock4OutputState::apply_haptics)(
-    const DualSenseHapticCommand &command)
+    const HapticCommand &command)
 {
     left_motor_ = mix_motor(command.left_motor, command.left_pulse);
     right_motor_ = mix_motor(command.right_motor, command.right_pulse);
@@ -92,4 +92,4 @@ void __not_in_flash_func(fill_dualshock4_output_crc)(
     report[report.size() - 1u] = static_cast<uint8_t>(crc >> 24u);
 }
 
-} // namespace ds5onswitch
+} // namespace switchbridge

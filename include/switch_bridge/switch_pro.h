@@ -1,11 +1,11 @@
 #pragma once
 
-#include "ds5onswitch/types.h"
+#include "switch_bridge/types.h"
 
 #include <cstddef>
 #include <cstdint>
 
-namespace ds5onswitch {
+namespace switchbridge {
 
 void pack_switch_stick12(uint8_t out[3], uint16_t x, uint16_t y);
 void switch_pro_button_bytes(uint32_t buttons, uint8_t out[3]);
@@ -22,4 +22,4 @@ bool parse_switch_pro_input_report(const uint8_t *report, std::size_t size,
 bool parse_switch_pro_bt_report(const uint8_t *report, std::size_t size,
                                 SwitchProState &out);
 
-} // namespace ds5onswitch
+} // namespace switchbridge

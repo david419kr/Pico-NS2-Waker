@@ -1,9 +1,9 @@
-#include "ds5onswitch/haptics.h"
+#include "switch_bridge/haptics.h"
 
 #include <algorithm>
 #include <cmath>
 
-namespace ds5onswitch {
+namespace switchbridge {
 
 namespace {
 
@@ -117,7 +117,7 @@ uint32_t switch_rumble_texture_q15(const SwitchRumblePacket &packet)
     return q15_clamp(q15_weight(high_unit, 65u) + q15_weight(low_unit, 35u));
 }
 
-DualSenseHapticCommand SwitchRumbleTranslator::translate(const SwitchRumblePacket &left,
+HapticCommand SwitchRumbleTranslator::translate(const SwitchRumblePacket &left,
                                                          const SwitchRumblePacket &right)
 {
     const bool left_silent = switch_rumble_packet_is_silent(left);
@@ -134,7 +134,7 @@ DualSenseHapticCommand SwitchRumbleTranslator::translate(const SwitchRumblePacke
     previous_right_ = right;
     has_previous_ = true;
 
-    DualSenseHapticCommand out{};
+    HapticCommand out{};
     if (!left_silent) {
         out.left_motor = q15_to_u8(body_unit_q15(left_amp));
         out.left_pulse = q15_to_u8(pulse_unit_q15(left_amp, left_texture, left_delta));
@@ -156,4 +156,4 @@ void SwitchRumbleTranslator::reset()
     has_previous_ = false;
 }
 
-} // namespace ds5onswitch
+} // namespace switchbridge

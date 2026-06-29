@@ -1,8 +1,8 @@
-#include "ds5onswitch/procon2_handshake.h"
+#include "switch_bridge/procon2_handshake.h"
 
 #include <cstring>
 
-namespace ds5onswitch {
+namespace switchbridge {
 
 namespace {
 
@@ -649,4 +649,4 @@ Procon2Reply procon2_build_reply(const uint8_t *request, std::size_t size,
     return reply;
 }
 
-} // namespace ds5onswitch
+} // namespace switchbridge

@@ -1,11 +1,11 @@
 #pragma once
 
-#include "ds5onswitch/switch_usb.h"
+#include "switch_bridge/switch_usb.h"
 
 #include <cstddef>
 #include <cstdint>
 
-namespace ds5onswitch {
+namespace switchbridge {
 
 enum class SteamHogBtControllerKind : uint8_t {
     Unknown,
@@ -30,4 +30,4 @@ bool steam_hog_bt_power_off();
 void steam_hog_bt_pause_for_switch2_wake();
 void steam_hog_bt_resume_after_switch2_wake();
 
-} // namespace ds5onswitch
+} // namespace switchbridge

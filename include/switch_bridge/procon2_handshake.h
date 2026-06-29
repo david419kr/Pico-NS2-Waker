@@ -4,7 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace ds5onswitch {
+namespace switchbridge {
 
 // ProCon2 (Switch 2 Pro Controller) USB "business-card" handshake helper.
 //
@@ -62,4 +62,4 @@ bool procon2_is_handshake_request(const uint8_t *data, std::size_t size);
 // active report id). Call when a fresh Switch 2 registration persona starts.
 void procon2_handshake_reset();
 
-} // namespace ds5onswitch
+} // namespace switchbridge

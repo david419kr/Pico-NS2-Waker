@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace ds5onswitch {
+namespace switchbridge {
 
 enum class BtDebugEvent : uint8_t {
     Boot = 1,
@@ -31,4 +31,4 @@ void bt_debug_log_clear();
 uint32_t bt_debug_log_flash_offset();
 uint32_t bt_debug_log_size();
 
-} // namespace ds5onswitch
+} // namespace switchbridge

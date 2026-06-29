@@ -1,6 +1,6 @@
-#include "ds5onswitch/switch_identity.h"
+#include "switch_bridge/switch_identity.h"
 
-namespace ds5onswitch {
+namespace switchbridge {
 
 namespace {
 
@@ -32,4 +32,4 @@ void switch_identity_set_bd_addr(const SwitchControllerBdAddr &addr)
     g_bd_addr = addr;
 }
 
-} // namespace ds5onswitch
+} // namespace switchbridge

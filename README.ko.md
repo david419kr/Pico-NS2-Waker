@@ -14,19 +14,18 @@ Credits:
 - 모션 컨트롤과 진동을 지원합니다. 단, Xbox 컨트롤러는 모션 컨트롤을 지원하지 않습니다.
 - DualSense 3.5 mm 단자와 마이크용 USB 오디오 경로가 있습니다. 현재는 known problem으로 정상 동작하지 않습니다.
 
-
 ## 준비물
 
 - Raspberry Pi Pico 2 W
 - Sony DualSense 컨트롤러, DualShock 4, Nintendo Switch Pro Controller 1, Steam Controller, 또는 Xbox Bluetooth 컨트롤러
 - Pico 2 W를 Switch/PC에 연결할 micro USB 케이블
-- [최신 GitHub Release](https://github.com/david419kr/DS5onSwitch/releases/latest)의 펌웨어 파일
+- [최신 GitHub Release](https://github.com/david419kr/wake-NS2-dongle/releases/latest)의 펌웨어 파일
 
 ## 펌웨어 설치
 
 1. Pico 2 W의 BOOTSEL 버튼을 누른 채 PC에 USB로 연결합니다.
-2. [최신 GitHub Release](https://github.com/david419kr/DS5onSwitch/releases/latest)에서 `ds5onswitch.uf2`를 다운로드합니다.
-3. PC에 나타난 USB 드라이브에 `ds5onswitch.uf2`를 복사합니다.
+2. [최신 GitHub Release](https://github.com/david419kr/wake-NS2-dongle/releases/latest)에서 `switchbridge.uf2`를 다운로드합니다.
+3. PC에 나타난 USB 드라이브에 `switchbridge.uf2`를 복사합니다.
 4. 복사가 끝나면 Pico 2 W가 자동으로 재부팅됩니다.
 
 이미 이 펌웨어가 올라가 있다면 BOOTSEL 버튼을 4번 클릭해서 USB 드라이브 모드로 들어갈 수 있습니다.
@@ -126,7 +125,7 @@ powershell -ExecutionPolicy Bypass -File tools\build.ps1
 빌드가 끝나면 펌웨어 파일은 아래 경로에 생성됩니다.
 
 ```text
-build\pico2_w\ds5onswitch.uf2
+build\pico2_w\switchbridge.uf2
 ```
 
 ## 문제 해결

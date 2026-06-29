@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace ds5onswitch {
+namespace switchbridge {
 
 enum class ControllerFeedbackCue : uint8_t {
     Connected,
@@ -12,4 +12,4 @@ enum class ControllerFeedbackCue : uint8_t {
 void controller_feedback_play(ControllerFeedbackCue cue);
 void controller_feedback_service(uint32_t now_ms);
 
-} // namespace ds5onswitch
+} // namespace switchbridge

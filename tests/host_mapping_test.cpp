@@ -1,24 +1,24 @@
-#include "ds5onswitch/dualsense_output.h"
-#include "ds5onswitch/dualshock4_output.h"
-#include "ds5onswitch/dualshock4_report.h"
-#include "ds5onswitch/dualsense_report.h"
-#include "ds5onswitch/haptics.h"
-#include "ds5onswitch/mapper.h"
-#include "ds5onswitch/persona_combo_filter.h"
-#include "ds5onswitch/procon2_handshake.h"
-#include "ds5onswitch/steam_controller.h"
-#include "ds5onswitch/switch_identity.h"
-#include "ds5onswitch/switch_pro.h"
-#include "ds5onswitch/switch_usb.h"
-#include "ds5onswitch/switch2_wake.h"
-#include "ds5onswitch/xbox_controller.h"
+#include "switch_bridge/dualsense_output.h"
+#include "switch_bridge/dualshock4_output.h"
+#include "switch_bridge/dualshock4_report.h"
+#include "switch_bridge/dualsense_report.h"
+#include "switch_bridge/haptics.h"
+#include "switch_bridge/mapper.h"
+#include "switch_bridge/persona_combo_filter.h"
+#include "switch_bridge/procon2_handshake.h"
+#include "switch_bridge/steam_controller.h"
+#include "switch_bridge/switch_identity.h"
+#include "switch_bridge/switch_pro.h"
+#include "switch_bridge/switch_usb.h"
+#include "switch_bridge/switch2_wake.h"
+#include "switch_bridge/xbox_controller.h"
 
 #include <array>
 #include <cassert>
 #include <cstdint>
 #include <cstring>
 
-using namespace ds5onswitch;
+using namespace switchbridge;
 
 namespace {
 
@@ -30,15 +30,15 @@ int16_t read_i16_le(const uint8_t *p)
 
 void test_button_mapping()
 {
-    DualSenseInput in{};
-    in.buttons = kDs5Cross | kDs5Circle | kDs5Square | kDs5Triangle |
-                 kDs5L1 | kDs5R1 | kDs5Create | kDs5Options |
-                 kDs5L3 | kDs5R3 | kDs5Ps | kDs5TouchpadClick;
+    PlayStationInput in{};
+    in.buttons = kPsCross | kPsCircle | kPsSquare | kPsTriangle |
+                 kPsL1 | kPsR1 | kPsCreate | kPsOptions |
+                 kPsL3 | kPsR3 | kPsButton | kPsTouchpadClick;
     in.l2 = 64;
     in.r2 = 255;
-    in.dpad = DualSenseDpad::UpRight;
+    in.dpad = PlayStationDpad::UpRight;
 
-    const SwitchProState state = map_dualsense_to_switch(in);
+    const SwitchProState state = map_playstation_to_switch(in);
     assert((state.buttons & kNsB) != 0);
     assert((state.buttons & kNsA) != 0);
     assert((state.buttons & kNsY) != 0);
@@ -71,56 +71,56 @@ void test_persona_combo_filter()
 {
     PersonaComboFilter filter;
 
-    PersonaComboFilterResult r = filter.process(kDs5Ps, 0);
+    PersonaComboFilterResult r = filter.process(kPsButton, 0);
     assert(r.request == PersonaComboRequest::None);
-    assert((r.buttons & kDs5Ps) != 0);
-    r = filter.process(kDs5Ps, 8);
+    assert((r.buttons & kPsButton) != 0);
+    r = filter.process(kPsButton, 8);
     assert(r.request == PersonaComboRequest::None);
-    assert((r.buttons & kDs5Ps) != 0);
+    assert((r.buttons & kPsButton) != 0);
     r = filter.process(0, 16);
     assert(r.request == PersonaComboRequest::None);
-    assert((r.buttons & kDs5Ps) == 0);
+    assert((r.buttons & kPsButton) == 0);
 
     filter.reset();
-    (void)filter.process(kDs5Ps, 0);
-    r = filter.process(kDs5Ps | kDs5TouchpadClick, 8);
+    (void)filter.process(kPsButton, 0);
+    r = filter.process(kPsButton | kPsTouchpadClick, 8);
     assert(r.request == PersonaComboRequest::None);
-    assert((r.buttons & kDs5Ps) != 0);
-    assert((r.buttons & kDs5TouchpadClick) == 0);
-    r = filter.process(kDs5TouchpadClick, 16);
+    assert((r.buttons & kPsButton) != 0);
+    assert((r.buttons & kPsTouchpadClick) == 0);
+    r = filter.process(kPsTouchpadClick, 16);
     assert(r.request == PersonaComboRequest::SwitchPro);
-    assert((r.buttons & kDs5Ps) == 0);
-    assert((r.buttons & kDs5TouchpadClick) == 0);
-    r = filter.process(kDs5TouchpadClick, 24);
+    assert((r.buttons & kPsButton) == 0);
+    assert((r.buttons & kPsTouchpadClick) == 0);
+    r = filter.process(kPsTouchpadClick, 24);
     assert(r.request == PersonaComboRequest::None);
-    assert((r.buttons & kDs5TouchpadClick) == 0);
+    assert((r.buttons & kPsTouchpadClick) == 0);
 
     filter.reset();
-    (void)filter.process(kDs5Ps, 0);
-    (void)filter.process(kDs5Ps | kDs5TouchpadClick, 8);
-    (void)filter.process(kDs5Ps, 16);
-    (void)filter.process(kDs5Ps | kDs5TouchpadClick, 24);
-    (void)filter.process(kDs5Ps, 32);
+    (void)filter.process(kPsButton, 0);
+    (void)filter.process(kPsButton | kPsTouchpadClick, 8);
+    (void)filter.process(kPsButton, 16);
+    (void)filter.process(kPsButton | kPsTouchpadClick, 24);
+    (void)filter.process(kPsButton, 32);
     r = filter.process(0, 40);
     assert(r.request == PersonaComboRequest::Switch2Pro);
-    assert((r.buttons & kDs5Ps) == 0);
-    assert((r.buttons & kDs5TouchpadClick) == 0);
+    assert((r.buttons & kPsButton) == 0);
+    assert((r.buttons & kPsTouchpadClick) == 0);
 
     filter.reset();
-    (void)filter.process(kDs5Ps, 0);
+    (void)filter.process(kPsButton, 0);
     r = filter.process(0, 8);
-    assert((r.buttons & kDs5Ps) == 0);
-    r = filter.process(kDs5Ps, 16);
+    assert((r.buttons & kPsButton) == 0);
+    r = filter.process(kPsButton, 16);
     assert(r.request == PersonaComboRequest::None);
-    assert((r.buttons & kDs5Ps) != 0);
-    r = filter.process(kDs5Ps | kDs5TouchpadClick, 24);
+    assert((r.buttons & kPsButton) != 0);
+    r = filter.process(kPsButton | kPsTouchpadClick, 24);
     assert(r.request == PersonaComboRequest::None);
-    assert((r.buttons & kDs5Ps) != 0);
-    assert((r.buttons & kDs5TouchpadClick) == 0);
+    assert((r.buttons & kPsButton) != 0);
+    assert((r.buttons & kPsTouchpadClick) == 0);
     r = filter.process(0, 32);
     assert(r.request == PersonaComboRequest::SwitchPro);
-    assert((r.buttons & kDs5Ps) == 0);
-    assert((r.buttons & kDs5TouchpadClick) == 0);
+    assert((r.buttons & kPsButton) == 0);
+    assert((r.buttons & kPsTouchpadClick) == 0);
 
     filter.reset();
     r = filter.process(kNsHome, kNsHome, kNsCapture, 0);
@@ -152,10 +152,10 @@ void test_axis_and_motion_mapping()
     assert(axis8_to_switch12(0) == 0);
     assert(axis8_to_switch12(255) == 0x0fff);
     assert(axis8_to_switch12(128) >= 0x800);
-    assert(dualsense_gyro_to_switch(1024) == 14);
-    assert(dualsense_gyro_to_switch(-2048) == -28);
+    assert(playstation_gyro_to_switch(1024) == 14);
+    assert(playstation_gyro_to_switch(-2048) == -28);
 
-    DualSenseInput in{};
+    PlayStationInput in{};
     in.left_x = 0;
     in.left_y = 255;
     in.right_x = 128;
@@ -168,18 +168,18 @@ void test_axis_and_motion_mapping()
     in.gyro_y = -2048;
     in.gyro_z = 512;
 
-    const SwitchProState state = map_dualsense_to_switch(in);
+    const SwitchProState state = map_playstation_to_switch(in);
     assert(state.left_x == 0);
     assert(state.left_y == 0);
     assert(state.right_x == axis8_to_switch12(128));
     assert(state.right_y == 0x0fff);
     assert(state.has_imu);
-    assert(state.accel_x == dualsense_accel_to_switch(-in.accel_z));
-    assert(state.accel_y == dualsense_accel_to_switch(-in.accel_x));
-    assert(state.accel_z == dualsense_accel_to_switch(in.accel_y));
-    assert(state.gyro_x == dualsense_gyro_to_switch(-in.gyro_y));
-    assert(state.gyro_y == dualsense_gyro_to_switch(-in.gyro_x));
-    assert(state.gyro_z == dualsense_gyro_to_switch(in.gyro_z));
+    assert(state.accel_x == playstation_accel_to_switch(-in.accel_z));
+    assert(state.accel_y == playstation_accel_to_switch(-in.accel_x));
+    assert(state.accel_z == playstation_accel_to_switch(in.accel_y));
+    assert(state.gyro_x == playstation_gyro_to_switch(-in.gyro_y));
+    assert(state.gyro_y == playstation_gyro_to_switch(-in.gyro_x));
+    assert(state.gyro_z == playstation_gyro_to_switch(in.gyro_z));
 
     const SwitchProInputReport report = build_switch_pro_input_report(state, 1, false);
     assert(read_i16_le(&report[13]) == state.accel_x);
@@ -200,7 +200,7 @@ void test_nrf5340_steam_motion_axis_parity()
     constexpr int16_t steam_accel_y = 0x0203;
     constexpr int16_t steam_accel_z = -0x3040;
 
-    DualSenseInput in{};
+    PlayStationInput in{};
     in.has_imu = true;
     in.gyro_x = steam_gyro_x;
     in.gyro_y = static_cast<int16_t>(-steam_gyro_y);
@@ -209,17 +209,17 @@ void test_nrf5340_steam_motion_axis_parity()
     in.accel_y = steam_accel_z;
     in.accel_z = static_cast<int16_t>(-steam_accel_y);
 
-    const SwitchProState state = map_dualsense_to_switch(in);
-    assert(state.gyro_x == dualsense_gyro_to_switch(steam_gyro_y));
-    assert(state.gyro_y == dualsense_gyro_to_switch(
+    const SwitchProState state = map_playstation_to_switch(in);
+    assert(state.gyro_x == playstation_gyro_to_switch(steam_gyro_y));
+    assert(state.gyro_y == playstation_gyro_to_switch(
                                static_cast<int16_t>(-steam_gyro_x)));
-    assert(state.gyro_z == dualsense_gyro_to_switch(steam_gyro_z));
+    assert(state.gyro_z == playstation_gyro_to_switch(steam_gyro_z));
 
     // nRF5340 Switch Pro scales Steam accel separately. This checks the
     // source axis/sign selection before DualSense-to-Switch scaling.
-    assert(state.accel_x == dualsense_accel_to_switch(steam_accel_y));
-    assert(state.accel_y == dualsense_accel_to_switch(-steam_accel_x));
-    assert(state.accel_z == dualsense_accel_to_switch(steam_accel_z));
+    assert(state.accel_x == playstation_accel_to_switch(steam_accel_y));
+    assert(state.accel_y == playstation_accel_to_switch(-steam_accel_x));
+    assert(state.accel_z == playstation_accel_to_switch(steam_accel_z));
 }
 
 void test_haptics()
@@ -228,7 +228,7 @@ void test_haptics()
     const SwitchRumblePacket silent{0x00, 0x01, 0x40, 0x40};
     const SwitchRumblePacket impact{0x34, 0xf0, 0x62, 0xe0};
 
-    DualSenseHapticCommand cmd = translator.translate(silent, silent);
+    HapticCommand cmd = translator.translate(silent, silent);
     assert(!cmd.active);
 
     cmd = translator.translate(impact, silent);
@@ -444,7 +444,7 @@ void test_steam_output_builders()
     assert(buf[4] == 0x18u);
     assert(buf[5] == 0x00u);
 
-    DualSenseHapticCommand haptics{};
+    HapticCommand haptics{};
     haptics.left_motor = 3;
     haptics.right_motor = 4;
     std::array<uint8_t, 10> out{};
@@ -697,7 +697,7 @@ void test_xbox_persona_and_capture_combos()
 
 void test_xbox_rumble_output_builder()
 {
-    DualSenseHapticCommand haptics{};
+    HapticCommand haptics{};
     haptics.active = true;
     haptics.left_motor = 10;
     haptics.right_motor = 20;
@@ -738,7 +738,7 @@ void test_xbox_rumble_output_builder()
     assert(out[8] == 0);
 }
 
-void test_dualsense_bt_input_parser()
+void test_dualsense_report_parser()
 {
     uint8_t report[kDualSenseBt31PayloadSize + 3u]{};
     report[0] = 0xa1;
@@ -750,7 +750,7 @@ void test_dualsense_bt_input_parser()
     payload[3] = 4;
     payload[4] = 64;
     payload[5] = 65;
-    payload[7] = 0x20 | static_cast<uint8_t>(DualSenseDpad::DownLeft);
+    payload[7] = 0x20 | static_cast<uint8_t>(PlayStationDpad::DownLeft);
     payload[8] = 0x01 | 0x08 | 0x10 | 0x80;
     payload[9] = 0x01 | 0x02;
     write_i16_le(payload + 15, 1000);
@@ -762,7 +762,7 @@ void test_dualsense_bt_input_parser()
     payload[53] = 0x01 | 0x02 | 0x04;
     payload[54] = 0x01;
 
-    DualSenseInput parsed{};
+    PlayStationInput parsed{};
     assert(parse_dualsense_bt_report(report, sizeof(report), parsed));
     assert(parsed.left_x == 1);
     assert(parsed.left_y == 2);
@@ -770,14 +770,14 @@ void test_dualsense_bt_input_parser()
     assert(parsed.right_y == 4);
     assert(parsed.l2 == 64);
     assert(parsed.r2 == 65);
-    assert(parsed.dpad == DualSenseDpad::DownLeft);
-    assert((parsed.buttons & kDs5Cross) != 0);
-    assert((parsed.buttons & kDs5L1) != 0);
-    assert((parsed.buttons & kDs5R2Button) != 0);
-    assert((parsed.buttons & kDs5Create) != 0);
-    assert((parsed.buttons & kDs5R3) != 0);
-    assert((parsed.buttons & kDs5Ps) != 0);
-    assert((parsed.buttons & kDs5TouchpadClick) != 0);
+    assert(parsed.dpad == PlayStationDpad::DownLeft);
+    assert((parsed.buttons & kPsCross) != 0);
+    assert((parsed.buttons & kPsL1) != 0);
+    assert((parsed.buttons & kPsR2Button) != 0);
+    assert((parsed.buttons & kPsCreate) != 0);
+    assert((parsed.buttons & kPsR3) != 0);
+    assert((parsed.buttons & kPsButton) != 0);
+    assert((parsed.buttons & kPsTouchpadClick) != 0);
     assert(parsed.has_imu);
     assert(parsed.gyro_x == 1000);
     assert(parsed.gyro_z == -2000);
@@ -790,12 +790,12 @@ void test_dualsense_bt_input_parser()
     assert(parsed.mic_muted);
     assert(parsed.external_mic_active);
 
-    const SwitchProState state = map_dualsense_to_switch(parsed);
+    const SwitchProState state = map_playstation_to_switch(parsed);
     assert((state.buttons & kNsB) != 0);
     assert((state.buttons & kNsCapture) != 0);
 }
 
-void test_dualsense_bt_output_report()
+void test_dualsense_output_report()
 {
     DualSenseOutputState state;
     state.reset();
@@ -822,7 +822,7 @@ void test_dualsense_bt_output_report()
     assert(state_block[8] == 0x00);
     assert((state_block[9] & 0x10) == 0);
 
-    DualSenseHapticCommand command{};
+    HapticCommand command{};
     command.left_pulse = 160;
     command.right_motor = 32;
     command.active = true;
@@ -861,7 +861,7 @@ void test_dualshock4_bt_input_parser()
     wire[4] = 22;
     wire[5] = 33;
     wire[6] = 44;
-    wire[7] = 0x10 | 0x20 | static_cast<uint8_t>(DualSenseDpad::UpRight);
+    wire[7] = 0x10 | 0x20 | static_cast<uint8_t>(PlayStationDpad::UpRight);
     wire[8] = 0x01 | 0x02 | 0x04 | 0x08 | 0x10 | 0x20 | 0x40 | 0x80;
     wire[9] = 0x01 | 0x02;
     wire[10] = 77;
@@ -873,7 +873,7 @@ void test_dualshock4_bt_input_parser()
     write_i16_le(wire + 23, -5000);
     write_i16_le(wire + 25, 6000);
 
-    DualSenseInput parsed{};
+    PlayStationInput parsed{};
     assert(parse_dualshock4_bt_report(report.data(), report.size(), parsed));
     assert(parsed.left_x == 11);
     assert(parsed.left_y == 22);
@@ -881,19 +881,19 @@ void test_dualshock4_bt_input_parser()
     assert(parsed.right_y == 44);
     assert(parsed.l2 == 77);
     assert(parsed.r2 == 88);
-    assert(parsed.dpad == DualSenseDpad::UpRight);
-    assert((parsed.buttons & kDs5Square) != 0);
-    assert((parsed.buttons & kDs5Cross) != 0);
-    assert((parsed.buttons & kDs5L1) != 0);
-    assert((parsed.buttons & kDs5R1) != 0);
-    assert((parsed.buttons & kDs5L2Button) != 0);
-    assert((parsed.buttons & kDs5R2Button) != 0);
-    assert((parsed.buttons & kDs5Create) != 0);
-    assert((parsed.buttons & kDs5Options) != 0);
-    assert((parsed.buttons & kDs5L3) != 0);
-    assert((parsed.buttons & kDs5R3) != 0);
-    assert((parsed.buttons & kDs5Ps) != 0);
-    assert((parsed.buttons & kDs5TouchpadClick) != 0);
+    assert(parsed.dpad == PlayStationDpad::UpRight);
+    assert((parsed.buttons & kPsSquare) != 0);
+    assert((parsed.buttons & kPsCross) != 0);
+    assert((parsed.buttons & kPsL1) != 0);
+    assert((parsed.buttons & kPsR1) != 0);
+    assert((parsed.buttons & kPsL2Button) != 0);
+    assert((parsed.buttons & kPsR2Button) != 0);
+    assert((parsed.buttons & kPsCreate) != 0);
+    assert((parsed.buttons & kPsOptions) != 0);
+    assert((parsed.buttons & kPsL3) != 0);
+    assert((parsed.buttons & kPsR3) != 0);
+    assert((parsed.buttons & kPsButton) != 0);
+    assert((parsed.buttons & kPsTouchpadClick) != 0);
     assert(parsed.has_imu);
     assert(parsed.gyro_x == 100);
     assert(parsed.gyro_y == -200);
@@ -902,7 +902,7 @@ void test_dualshock4_bt_input_parser()
     assert(parsed.accel_y == -5000);
     assert(parsed.accel_z == 6000);
 
-    const SwitchProState state = map_dualsense_to_switch(parsed);
+    const SwitchProState state = map_playstation_to_switch(parsed);
     assert((state.buttons & kNsB) != 0);
     assert((state.buttons & kNsY) != 0);
     assert((state.buttons & kNsMinus) != 0);
@@ -918,22 +918,22 @@ void test_dualshock4_bt_input_parser()
     minimal[2] = 2;
     minimal[3] = 3;
     minimal[4] = 4;
-    minimal[5] = 0x40 | static_cast<uint8_t>(DualSenseDpad::Down);
+    minimal[5] = 0x40 | static_cast<uint8_t>(PlayStationDpad::Down);
     minimal[6] = 0x80;
     minimal[7] = 0x01;
     minimal[8] = 9;
     minimal[9] = 10;
 
-    DualSenseInput mini{};
+    PlayStationInput mini{};
     assert(parse_dualshock4_bt_report(minimal.data(), minimal.size(), mini));
     assert(mini.left_x == 1);
     assert(mini.right_y == 4);
     assert(mini.l2 == 9);
     assert(mini.r2 == 10);
-    assert(mini.dpad == DualSenseDpad::Down);
-    assert((mini.buttons & kDs5Circle) != 0);
-    assert((mini.buttons & kDs5R3) != 0);
-    assert((mini.buttons & kDs5Ps) != 0);
+    assert(mini.dpad == PlayStationDpad::Down);
+    assert((mini.buttons & kPsCircle) != 0);
+    assert((mini.buttons & kPsR3) != 0);
+    assert((mini.buttons & kPsButton) != 0);
     assert(!mini.has_imu);
 
     std::array<uint8_t, 64> usb_shaped{};
@@ -942,7 +942,7 @@ void test_dualshock4_bt_input_parser()
     usb_shaped[2] = 22;
     usb_shaped[3] = 23;
     usb_shaped[4] = 24;
-    usb_shaped[5] = 0x80 | static_cast<uint8_t>(DualSenseDpad::Left);
+    usb_shaped[5] = 0x80 | static_cast<uint8_t>(PlayStationDpad::Left);
     usb_shaped[6] = 0x01 | 0x20;
     usb_shaped[7] = 0x02;
     usb_shaped[8] = 31;
@@ -954,16 +954,16 @@ void test_dualshock4_bt_input_parser()
     write_i16_le(usb_shaped.data() + 21, -1100);
     write_i16_le(usb_shaped.data() + 23, 1200);
 
-    DualSenseInput usb_full{};
+    PlayStationInput usb_full{};
     assert(parse_dualshock4_bt_report(usb_shaped.data(), usb_shaped.size(),
                                       usb_full));
     assert(usb_full.left_x == 21);
     assert(usb_full.right_y == 24);
-    assert(usb_full.dpad == DualSenseDpad::Left);
-    assert((usb_full.buttons & kDs5Triangle) != 0);
-    assert((usb_full.buttons & kDs5L1) != 0);
-    assert((usb_full.buttons & kDs5Options) != 0);
-    assert((usb_full.buttons & kDs5TouchpadClick) != 0);
+    assert(usb_full.dpad == PlayStationDpad::Left);
+    assert((usb_full.buttons & kPsTriangle) != 0);
+    assert((usb_full.buttons & kPsL1) != 0);
+    assert((usb_full.buttons & kPsOptions) != 0);
+    assert((usb_full.buttons & kPsTouchpadClick) != 0);
     assert(usb_full.l2 == 31);
     assert(usb_full.r2 == 32);
     assert(usb_full.has_imu);
@@ -981,7 +981,7 @@ void test_dualshock4_bt_output_report()
     state.reset();
     assert(!state.motors_active());
 
-    DualSenseHapticCommand command{};
+    HapticCommand command{};
     command.left_motor = 32;
     command.right_pulse = 160;
     command.active = true;
@@ -1012,11 +1012,11 @@ void test_dualshock4_bt_output_report()
 void test_switch_usb_reports()
 {
     SwitchUsbEmulator usb;
-    DualSenseInput in{};
+    PlayStationInput in{};
     in.has_imu = true;
     in.accel_x = 8192;
     in.accel_z = 8192;
-    usb.set_state(map_dualsense_to_switch(in));
+    usb.set_state(map_playstation_to_switch(in));
 
     SwitchReport report{};
     assert(usb.build_usb_response(kSwitchUsbCmdHandshake, report));
@@ -1462,8 +1462,8 @@ int main()
     test_xbox_controller_input_parser_and_mapping();
     test_xbox_persona_and_capture_combos();
     test_xbox_rumble_output_builder();
-    test_dualsense_bt_input_parser();
-    test_dualsense_bt_output_report();
+    test_dualsense_report_parser();
+    test_dualsense_output_report();
     test_dualshock4_bt_input_parser();
     test_dualshock4_bt_output_report();
     test_switch_usb_reports();

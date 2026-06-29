@@ -1,12 +1,12 @@
 #pragma once
 
-#include "ds5onswitch/haptics.h"
-#include "ds5onswitch/types.h"
+#include "switch_bridge/haptics.h"
+#include "switch_bridge/types.h"
 
 #include <cstddef>
 #include <cstdint>
 
-namespace ds5onswitch {
+namespace switchbridge {
 
 constexpr uint8_t kSwitchOutputSubcommand = 0x01;
 constexpr uint8_t kSwitchOutputRumbleOnly = 0x10;
@@ -42,7 +42,7 @@ struct SwitchUsbFeedback {
     uint8_t player_led_mask = 0;
     SwitchRumblePacket left_rumble{};
     SwitchRumblePacket right_rumble{};
-    DualSenseHapticCommand haptics{};
+    HapticCommand haptics{};
 };
 
 struct SwitchUsbOutputResult {
@@ -87,4 +87,4 @@ private:
                                  std::size_t args_size, SwitchUsbFeedback &feedback);
 };
 
-} // namespace ds5onswitch
+} // namespace switchbridge

@@ -4,7 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace ds5onswitch {
+namespace switchbridge {
 
 constexpr std::size_t kSwitch2WakeConsoleAddrWireSize = 6;
 constexpr std::size_t kSwitch2WakeAdvDataSize = 31;
@@ -17,4 +17,4 @@ bool switch2_wake_addr_valid(const uint8_t addr_wire[kSwitch2WakeConsoleAddrWire
 Switch2WakeAdvData switch2_wake_build_adv_data(
     const uint8_t console_addr_wire[kSwitch2WakeConsoleAddrWireSize]);
 
-} // namespace ds5onswitch
+} // namespace switchbridge

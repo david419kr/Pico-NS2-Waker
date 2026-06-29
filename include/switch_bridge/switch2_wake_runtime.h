@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace ds5onswitch {
+namespace switchbridge {
 
 // Register the firmware-only Switch 2 BLE wake state machine with BTstack.
 // Call before powering on HCI so the persisted target address can be loaded on
@@ -24,4 +24,4 @@ bool switch2_wake_request();
 // enumerate the USB device.
 void switch2_wake_service(bool usb_mounted);
 
-} // namespace ds5onswitch
+} // namespace switchbridge

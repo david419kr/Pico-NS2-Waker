@@ -1,8 +1,8 @@
-#include "ds5onswitch/steam_controller.h"
+#include "switch_bridge/steam_controller.h"
 
 #include <cstring>
 
-namespace ds5onswitch {
+namespace switchbridge {
 
 namespace {
 
@@ -387,7 +387,7 @@ std::size_t build_steam_settings_feature_command(uint8_t *out,
                                        out, out_size);
 }
 
-std::size_t build_steam_body_rumble_output(const DualSenseHapticCommand &haptics,
+std::size_t build_steam_body_rumble_output(const HapticCommand &haptics,
                                            uint8_t *out,
                                            std::size_t out_size)
 {
@@ -484,4 +484,4 @@ std::size_t build_steam_power_off_gatt_value(uint8_t *out,
     return kSteamPowerOffGattValueSize;
 }
 
-} // namespace ds5onswitch
+} // namespace switchbridge

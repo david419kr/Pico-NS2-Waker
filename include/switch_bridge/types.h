@@ -4,29 +4,29 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace ds5onswitch {
+namespace switchbridge {
 
 constexpr std::size_t kSwitchProInputReportSize = 64;
 constexpr uint8_t kSwitchProFullInputReportId = 0x30;
 constexpr uint8_t kSwitchProSubcommandReplyReportId = 0x21;
 constexpr uint8_t kSwitchProUsbResponseReportId = 0x81;
 
-enum DualSenseButton : uint32_t {
-    kDs5Square = 1u << 0,
-    kDs5Cross = 1u << 1,
-    kDs5Circle = 1u << 2,
-    kDs5Triangle = 1u << 3,
-    kDs5L1 = 1u << 4,
-    kDs5R1 = 1u << 5,
-    kDs5L2Button = 1u << 6,
-    kDs5R2Button = 1u << 7,
-    kDs5Create = 1u << 8,
-    kDs5Options = 1u << 9,
-    kDs5L3 = 1u << 10,
-    kDs5R3 = 1u << 11,
-    kDs5Ps = 1u << 12,
-    kDs5TouchpadClick = 1u << 13,
-    kDs5Mute = 1u << 14,
+enum PlayStationButton : uint32_t {
+    kPsSquare = 1u << 0,
+    kPsCross = 1u << 1,
+    kPsCircle = 1u << 2,
+    kPsTriangle = 1u << 3,
+    kPsL1 = 1u << 4,
+    kPsR1 = 1u << 5,
+    kPsL2Button = 1u << 6,
+    kPsR2Button = 1u << 7,
+    kPsCreate = 1u << 8,
+    kPsOptions = 1u << 9,
+    kPsL3 = 1u << 10,
+    kPsR3 = 1u << 11,
+    kPsButton = 1u << 12,
+    kPsTouchpadClick = 1u << 13,
+    kPsMute = 1u << 14,
 };
 
 enum SwitchButton : uint32_t {
@@ -50,7 +50,7 @@ enum SwitchButton : uint32_t {
     kNsCapture = 1u << 17,
 };
 
-enum class DualSenseDpad : uint8_t {
+enum class PlayStationDpad : uint8_t {
     Up = 0,
     UpRight = 1,
     Right = 2,
@@ -62,7 +62,7 @@ enum class DualSenseDpad : uint8_t {
     Neutral = 8,
 };
 
-struct DualSenseInput {
+struct PlayStationInput {
     uint8_t left_x = 128;
     uint8_t left_y = 128;
     uint8_t right_x = 128;
@@ -70,9 +70,9 @@ struct DualSenseInput {
     uint8_t l2 = 0;
     uint8_t r2 = 0;
     uint32_t buttons = 0;
-    DualSenseDpad dpad = DualSenseDpad::Neutral;
+    PlayStationDpad dpad = PlayStationDpad::Neutral;
 
-    // DualSense raw IMU convention used by Linux hid-playstation:
+    // PlayStation Bluetooth raw IMU convention used by DualSense and DualShock 4:
     // accel ~= 8192 counts/g, gyro ~= 1024 counts/dps.
     int16_t accel_x = 0;
     int16_t accel_y = 0;
@@ -110,4 +110,4 @@ struct SwitchProState {
 using SwitchProInputReport = std::array<uint8_t, kSwitchProInputReportSize>;
 using SwitchReport = std::array<uint8_t, kSwitchProInputReportSize>;
 
-} // namespace ds5onswitch
+} // namespace switchbridge

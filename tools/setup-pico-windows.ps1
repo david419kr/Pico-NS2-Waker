@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$ToolsHome = "$env:USERPROFILE\.ds5onswitch-build",
+    [string]$ToolsHome = "$env:USERPROFILE\.switchbridge-build",
     [switch]$SkipDownloads
 )
 
@@ -19,9 +19,9 @@ $ArmRoot = Join-Path $ToolsHome 'arm-gnu-toolchain'
 $MingwRoot = Join-Path $ToolsHome 'mingw64'
 $EnvScript = Join-Path $ToolsHome 'env.ps1'
 
-function Info($m) { Write-Host "[ds5onswitch] $m" -ForegroundColor Cyan }
-function Ok($m) { Write-Host "[ds5onswitch] $m" -ForegroundColor Green }
-function Die($m) { Write-Host "[ds5onswitch] ERROR: $m" -ForegroundColor Red; exit 1 }
+function Info($m) { Write-Host "[switchbridge] $m" -ForegroundColor Cyan }
+function Ok($m) { Write-Host "[switchbridge] $m" -ForegroundColor Green }
+function Die($m) { Write-Host "[switchbridge] ERROR: $m" -ForegroundColor Red; exit 1 }
 function Have($cmd) { [bool](Get-Command $cmd -ErrorAction SilentlyContinue) }
 
 function Add-SessionPath($dir) {
