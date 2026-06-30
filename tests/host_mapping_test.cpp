@@ -384,6 +384,73 @@ void test_steam_controller_input_parser_and_mapping()
     assert(legacy.gyro_z == input.gyro_z);
 }
 
+void test_steam_back_assignment_and_mapping()
+{
+    SteamBackMappings mappings = steam_back_default_mappings();
+
+    SteamControllerInput defaults{};
+    defaults.buttons =
+        kSteamBtnL4 | kSteamBtnR4 | kSteamBtnL5 | kSteamBtnR5;
+    SwitchProState state = map_steam_to_switch(defaults, mappings);
+    assert((state.buttons & kNsL) != 0);
+    assert((state.buttons & kNsR) != 0);
+    assert((state.buttons & kNsLeftStick) != 0);
+    assert((state.buttons & kNsRightStick) != 0);
+
+    SteamBackAssignmentState assignment{};
+    SteamControllerInput previous{};
+    SteamControllerInput start{};
+    start.buttons = kSteamBtnLeftPadClick | kSteamBtnL4;
+    SteamBackAssignmentResult r =
+        steam_back_assignment_process(start, &previous, mappings, assignment,
+                                      100);
+    assert(r.consumed);
+    assert(r.assignment_started);
+    assert(!r.mapping_changed);
+    assert(assignment.active);
+    assert(start.buttons == 0);
+
+    SteamControllerInput choose{};
+    choose.buttons = kSteamBtnLeftPadClick | kSteamBtnL4 | kSteamBtnA;
+    r = steam_back_assignment_process(choose, &previous, mappings, assignment,
+                                      108);
+    assert(r.consumed);
+    assert(!r.assignment_started);
+    assert(r.mapping_changed);
+    assert(!assignment.active);
+    assert(assignment.suppress_until_release);
+    assert(mappings[static_cast<std::size_t>(SteamBackButton::L4)] ==
+           SteamBackAction::South);
+
+    SteamControllerInput l4{};
+    l4.buttons = kSteamBtnL4;
+    state = map_steam_to_switch(l4, mappings);
+    assert((state.buttons & kNsB) != 0);
+    assert((state.buttons & kNsL) == 0);
+
+    SteamControllerInput released{};
+    r = steam_back_assignment_process(released, nullptr, mappings, assignment,
+                                      116);
+    assert(r.consumed);
+    assert(!assignment.suppress_until_release);
+
+    SteamControllerInput normal{};
+    normal.buttons = kSteamBtnA;
+    r = steam_back_assignment_process(normal, &released, mappings, assignment,
+                                      124);
+    assert(!r.consumed);
+
+    SteamBackAssignmentState directional_assignment{};
+    SteamControllerInput directional{};
+    directional.buttons = kSteamBtnLeftPadClick | kSteamBtnR4;
+    directional.left_pad_x = 12000;
+    directional.left_pad_y = 0;
+    r = steam_back_assignment_process(directional, &released, mappings,
+                                      directional_assignment, 200);
+    assert(!r.consumed);
+    assert(!directional_assignment.active);
+}
+
 void test_steam_persona_combo_filter()
 {
     PersonaComboFilter filter;
@@ -1596,6 +1663,7 @@ int main()
     test_nrf5340_steam_motion_axis_parity();
     test_haptics();
     test_steam_controller_input_parser_and_mapping();
+    test_steam_back_assignment_and_mapping();
     test_steam_persona_combo_filter();
     test_steam_output_builders();
     test_steam_trackpad_haptic_policy();

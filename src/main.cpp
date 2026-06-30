@@ -20,6 +20,7 @@
 #include "switch_bridge/usb_descriptors.h"
 #include "switch_bridge/xbox_controller.h"
 
+#include "btstack_tlv.h"
 #include "bsp/board_api.h"
 #include "cyw43.h"
 #include "pico/cyw43_arch.h"
@@ -78,9 +79,16 @@ uint32_t g_last_xbox_output_ms = 0;
 bool g_xbox_output_dirty = false;
 XboxControllerInput g_xbox_input{};
 SteamTrackpadHapticState g_steam_trackpad_haptics{};
+SteamBackMappings g_steam_back_mappings = steam_back_default_mappings();
+SteamBackAssignmentState g_steam_back_assignment{};
+SteamControllerInput g_last_steam_input{};
+bool g_last_steam_input_valid = false;
+bool g_steam_back_mappings_loaded = false;
+bool g_steam_back_mappings_dirty = false;
 
 constexpr uint32_t kUsbUnmountDebounceMs = 1000;
 constexpr uint32_t kHomeWakePendingWindowMs = 3000;
+constexpr uint32_t kSteamBackMappingsTlvTag = 0x5354424bu; // ASCII 'STBK'
 constexpr uint32_t kSwitch2RegistrationSignalTimeoutMs = 500;
 constexpr uint32_t kSwitch2RegistrationTimeoutMs = 12000;
 constexpr uint32_t kSwitch2RegistrationFinalizeGraceMs = 250;
@@ -364,6 +372,76 @@ void note_switch2_registration_signal_seen()
     }
 }
 
+void reset_steam_back_assignment_runtime()
+{
+    steam_back_assignment_reset(g_steam_back_assignment);
+    g_last_steam_input = {};
+    g_last_steam_input_valid = false;
+}
+
+bool steam_back_tlv(const btstack_tlv_t *&tlv, void *&tlv_context)
+{
+    tlv = nullptr;
+    tlv_context = nullptr;
+    btstack_tlv_get_instance(&tlv, &tlv_context);
+    return tlv != nullptr;
+}
+
+void load_steam_back_mappings()
+{
+    if (g_steam_back_mappings_loaded) {
+        return;
+    }
+
+    const btstack_tlv_t *tlv = nullptr;
+    void *tlv_context = nullptr;
+    if (!steam_back_tlv(tlv, tlv_context)) {
+        return;
+    }
+    g_steam_back_mappings_loaded = true;
+
+    uint8_t raw[static_cast<std::size_t>(SteamBackButton::Count)]{};
+    const int len =
+        tlv->get_tag(tlv_context, kSteamBackMappingsTlvTag, raw, sizeof(raw));
+    if (len != static_cast<int>(sizeof(raw))) {
+        return;
+    }
+
+    SteamBackMappings loaded{};
+    for (std::size_t i = 0; i < loaded.size(); ++i) {
+        loaded[i] = static_cast<SteamBackAction>(raw[i]);
+    }
+    if (steam_back_mappings_valid(loaded)) {
+        g_steam_back_mappings = loaded;
+    }
+}
+
+void mark_steam_back_mappings_dirty()
+{
+    g_steam_back_mappings_dirty = true;
+}
+
+void persist_steam_back_mappings_if_dirty()
+{
+    if (!g_steam_back_mappings_dirty) {
+        return;
+    }
+
+    const btstack_tlv_t *tlv = nullptr;
+    void *tlv_context = nullptr;
+    if (!steam_back_tlv(tlv, tlv_context)) {
+        return;
+    }
+
+    uint8_t raw[static_cast<std::size_t>(SteamBackButton::Count)]{};
+    for (std::size_t i = 0; i < g_steam_back_mappings.size(); ++i) {
+        raw[i] = static_cast<uint8_t>(g_steam_back_mappings[i]);
+    }
+    (void)tlv->store_tag(tlv_context, kSteamBackMappingsTlvTag, raw,
+                         sizeof(raw));
+    g_steam_back_mappings_dirty = false;
+}
+
 void __not_in_flash_func(handle_xbox_input)(XboxControllerInput input)
 {
     const uint32_t now = board_millis();
@@ -560,6 +638,30 @@ void __not_in_flash_func(on_steam_hog_bt_data)(SteamHogBtControllerKind kind,
         select_switch2_pro_persona();
     }
 
+    load_steam_back_mappings();
+    const SteamControllerInput previous_input = g_last_steam_input;
+    const SteamBackAssignmentResult assignment =
+        steam_back_assignment_process(input,
+                                      g_last_steam_input_valid ? &previous_input
+                                                               : nullptr,
+                                      g_steam_back_mappings,
+                                      g_steam_back_assignment, now);
+    if (assignment.mapping_changed) {
+        mark_steam_back_mappings_dirty();
+    }
+    if (assignment.assignment_started) {
+        steam_hog_bt_pulse_trackpad_haptic(true, true);
+    }
+    if (assignment.consumed) {
+        g_last_steam_buttons = input.buttons;
+        g_last_steam_input = input;
+        g_last_steam_input_valid = true;
+        g_procon_passthrough_valid = false;
+        g_switch_usb.set_state(map_steam_to_switch(input,
+                                                   g_steam_back_mappings));
+        return;
+    }
+
     const bool home_down = (input.buttons & kSteamBtnSteam) != 0;
     const bool home_edge =
         home_down && (g_last_steam_buttons & kSteamBtnSteam) == 0;
@@ -583,7 +685,9 @@ void __not_in_flash_func(on_steam_hog_bt_data)(SteamHogBtControllerKind kind,
     }
 
     g_procon_passthrough_valid = false;
-    g_switch_usb.set_state(map_steam_to_switch(input));
+    g_last_steam_input = input;
+    g_last_steam_input_valid = true;
+    g_switch_usb.set_state(map_steam_to_switch(input, g_steam_back_mappings));
 }
 
 void __not_in_flash_func(apply_switch_feedback)(
@@ -727,6 +831,7 @@ void __not_in_flash_func(service_steam_connection)()
     last_kind = kind;
     if (kind != previous_kind) {
         g_steam_trackpad_haptics = {};
+        reset_steam_back_assignment_runtime();
     }
 
     if (!connected) {
@@ -734,6 +839,7 @@ void __not_in_flash_func(service_steam_connection)()
         g_last_xbox_buttons = 0;
         g_xbox_input = {};
         g_steam_trackpad_haptics = {};
+        reset_steam_back_assignment_runtime();
         if (classic_hid_is_connected()) {
             return;
         }
@@ -1147,6 +1253,7 @@ void __no_inline_not_in_flash_func(app_loop)()
         service_usb_reports();
         service_usb_reconnect();
         classic_hid_persist_blacklist_if_dirty();
+        persist_steam_back_mappings_if_dirty();
         service_led();
     }
 }

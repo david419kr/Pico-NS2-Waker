@@ -59,6 +59,7 @@ Switch 1 wake is not supported.
 | DualSense | Touchpad click is recognized as the screenshot Capture button. |
 | DualShock 4 | Touchpad click is recognized as the screenshot Capture button. |
 | Steam Controller | Left touchpad is recognized as D-pad, right touchpad as right stick, and the QAM (...) button as screenshot Capture. |
+| Steam Controller | To remap L4/R4/L5/R5, hold the center click of the left touchpad, press the back button to remap, then press the button to assign. |
 | Xbox Controller | Pressing Back/View + Menu together is recognized as screenshot Capture. |
 
 ## Audio

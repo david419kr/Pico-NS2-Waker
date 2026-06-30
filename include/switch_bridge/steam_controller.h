@@ -3,6 +3,7 @@
 #include "switch_bridge/haptics.h"
 #include "switch_bridge/types.h"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 
@@ -128,6 +129,53 @@ struct SteamTrackpadHapticAction {
     bool right_click = false;
 };
 
+enum class SteamBackButton : uint8_t {
+    L4,
+    R4,
+    L5,
+    R5,
+    Count,
+};
+
+enum class SteamBackAction : uint8_t {
+    None,
+    DpadUp,
+    DpadDown,
+    DpadLeft,
+    DpadRight,
+    South,
+    East,
+    West,
+    North,
+    L1,
+    R1,
+    L2,
+    R2,
+    L3,
+    R3,
+    Back,
+    Start,
+    Guide,
+    Capture,
+};
+
+using SteamBackMappings =
+    std::array<SteamBackAction, static_cast<std::size_t>(SteamBackButton::Count)>;
+
+struct SteamBackAssignmentState {
+    bool active = false;
+    bool suppress_until_release = false;
+    SteamBackButton target = SteamBackButton::L4;
+    uint32_t deadline_ms = 0;
+    SteamControllerInput baseline{};
+};
+
+struct SteamBackAssignmentResult {
+    bool consumed = false;
+    bool assignment_started = false;
+    bool mapping_changed = false;
+};
+
 bool parse_steam_controller_report(const uint8_t *data, std::size_t size,
                                    SteamControllerInput &out);
 
@@ -135,8 +183,19 @@ uint8_t steam_trigger_to_u8(uint16_t raw);
 uint16_t steam_axis_to_switch12(int16_t raw, bool invert = false);
 int16_t steam_accel_to_switch(int16_t raw);
 SwitchProState map_steam_to_switch(const SteamControllerInput &input);
+SwitchProState map_steam_to_switch(const SteamControllerInput &input,
+                                   const SteamBackMappings &back_mappings);
 SteamTrackpadHapticAction update_steam_trackpad_haptics(
     const SteamControllerInput &input, SteamTrackpadHapticState &state,
+    uint32_t now_ms);
+
+SteamBackMappings steam_back_default_mappings();
+bool steam_back_mappings_valid(const SteamBackMappings &mappings);
+void steam_back_normalize_mappings(SteamBackMappings &mappings);
+void steam_back_assignment_reset(SteamBackAssignmentState &state);
+SteamBackAssignmentResult steam_back_assignment_process(
+    SteamControllerInput &input, const SteamControllerInput *previous_input,
+    SteamBackMappings &mappings, SteamBackAssignmentState &state,
     uint32_t now_ms);
 
 std::size_t build_steam_feature_command(uint8_t command, const uint8_t *payload,

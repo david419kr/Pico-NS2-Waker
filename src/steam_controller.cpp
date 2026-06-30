@@ -13,6 +13,10 @@ constexpr int32_t kSteamTrackpadDpadDeadzone = 9000;
 constexpr int32_t kSteamTrackpadMovePulseThreshold = 1800;
 constexpr uint32_t kSteamTrackpadMovePulseIntervalMs = 22;
 constexpr std::size_t kSteamFeatureCommandSize = 64;
+constexpr uint16_t kSteamBackAssignTriggerThreshold = 0x4000;
+constexpr uint32_t kSteamBackAssignTimeoutMs = 8000;
+constexpr uint32_t kSteamBackButtonMask =
+    kSteamBtnL4 | kSteamBtnR4 | kSteamBtnL5 | kSteamBtnR5;
 
 uint16_t read_u16_le(const uint8_t *p)
 {
@@ -197,6 +201,319 @@ void map_left_trackpad_dpad(const SteamControllerInput &input,
     map_dpad_dir(dir, switch_buttons);
 }
 
+SteamDpadDir button_dpad(uint32_t buttons)
+{
+    const bool up = (buttons & kSteamBtnDpadUp) != 0u;
+    const bool right = (buttons & kSteamBtnDpadRight) != 0u;
+    const bool down = (buttons & kSteamBtnDpadDown) != 0u;
+    const bool left = (buttons & kSteamBtnDpadLeft) != 0u;
+
+    if (up && right && !down && !left) {
+        return SteamDpadDir::NE;
+    }
+    if (right && down && !up && !left) {
+        return SteamDpadDir::SE;
+    }
+    if (down && left && !up && !right) {
+        return SteamDpadDir::SW;
+    }
+    if (left && up && !right && !down) {
+        return SteamDpadDir::NW;
+    }
+    if (up && !right && !down && !left) {
+        return SteamDpadDir::N;
+    }
+    if (right && !up && !down && !left) {
+        return SteamDpadDir::E;
+    }
+    if (down && !up && !right && !left) {
+        return SteamDpadDir::S;
+    }
+    if (left && !up && !right && !down) {
+        return SteamDpadDir::W;
+    }
+    return SteamDpadDir::None;
+}
+
+SteamDpadDir selected_steam_dpad(const SteamControllerInput &input)
+{
+    const SteamDpadDir left_pad = trackpad_dpad(
+        input.left_pad_x, input.left_pad_y,
+        (input.buttons & kSteamBtnLeftPadClick) != 0u);
+    return left_pad != SteamDpadDir::None ? left_pad
+                                          : button_dpad(input.buttons);
+}
+
+bool dpad_action(SteamDpadDir dir, SteamBackAction &out)
+{
+    switch (dir) {
+    case SteamDpadDir::N:
+        out = SteamBackAction::DpadUp;
+        return true;
+    case SteamDpadDir::E:
+        out = SteamBackAction::DpadRight;
+        return true;
+    case SteamDpadDir::S:
+        out = SteamBackAction::DpadDown;
+        return true;
+    case SteamDpadDir::W:
+        out = SteamBackAction::DpadLeft;
+        return true;
+    default:
+        return false;
+    }
+}
+
+constexpr std::size_t steam_back_index(SteamBackButton button)
+{
+    return static_cast<std::size_t>(button);
+}
+
+bool steam_back_action_valid(SteamBackAction action)
+{
+    return action >= SteamBackAction::None &&
+           action <= SteamBackAction::Capture;
+}
+
+void add_assignment_candidate(SteamBackAction candidate, SteamBackAction &found,
+                              uint8_t &count)
+{
+    if (!steam_back_action_valid(candidate)) {
+        return;
+    }
+    if (count == 0u) {
+        found = candidate;
+        count = 1u;
+    } else if (found != candidate) {
+        ++count;
+    }
+}
+
+bool steam_left_trackpad_center_modifier(const SteamControllerInput &input)
+{
+    return (input.buttons & kSteamBtnLeftPadClick) != 0u &&
+           trackpad_dpad(input.left_pad_x, input.left_pad_y, true) ==
+               SteamDpadDir::None;
+}
+
+bool steam_back_button_from_bit(uint32_t bit, SteamBackButton &out)
+{
+    switch (bit) {
+    case kSteamBtnL4:
+        out = SteamBackButton::L4;
+        return true;
+    case kSteamBtnR4:
+        out = SteamBackButton::R4;
+        return true;
+    case kSteamBtnL5:
+        out = SteamBackButton::L5;
+        return true;
+    case kSteamBtnR5:
+        out = SteamBackButton::R5;
+        return true;
+    default:
+        return false;
+    }
+}
+
+bool single_back_rising(uint32_t rising, SteamBackButton &out)
+{
+    uint32_t selected = 0;
+    uint32_t candidates = rising & kSteamBackButtonMask;
+    for (uint32_t bit = 1u; bit != 0u; bit <<= 1u) {
+        if ((candidates & bit) == 0u) {
+            continue;
+        }
+        if (selected != 0u) {
+            return false;
+        }
+        selected = bit;
+    }
+    return selected != 0u && steam_back_button_from_bit(selected, out);
+}
+
+bool assignment_inputs_released(const SteamControllerInput &input)
+{
+    constexpr uint32_t input_mask =
+        kSteamBtnA | kSteamBtnB | kSteamBtnX | kSteamBtnY |
+        kSteamBtnSteamMenu | kSteamBtnRightStick | kSteamBtnMenu |
+        kSteamBackButtonMask | kSteamBtnRightBumper | kSteamBtnDpadDown |
+        kSteamBtnDpadRight | kSteamBtnDpadLeft | kSteamBtnDpadUp |
+        kSteamBtnView | kSteamBtnLeftStick | kSteamBtnSteam |
+        kSteamBtnLeftBumper | kSteamBtnRightPadClick |
+        kSteamBtnLeftPadClick;
+
+    return (input.buttons & input_mask) == 0u &&
+           input.left_trigger < kSteamBackAssignTriggerThreshold &&
+           input.right_trigger < kSteamBackAssignTriggerThreshold;
+}
+
+bool action_from_assignment_input(const SteamControllerInput &input,
+                                  const SteamControllerInput &baseline,
+                                  SteamBackAction &out)
+{
+    SteamBackAction found = SteamBackAction::None;
+    uint8_t count = 0;
+    const uint32_t new_buttons = input.buttons & ~baseline.buttons;
+    SteamBackAction dpad = SteamBackAction::None;
+    const SteamDpadDir old_dpad = selected_steam_dpad(baseline);
+    const SteamDpadDir new_dpad = selected_steam_dpad(input);
+
+    if (new_dpad != SteamDpadDir::None && new_dpad != old_dpad &&
+        dpad_action(new_dpad, dpad)) {
+        add_assignment_candidate(dpad, found, count);
+    }
+    if ((new_buttons & kSteamBtnA) != 0u) {
+        add_assignment_candidate(SteamBackAction::South, found, count);
+    }
+    if ((new_buttons & kSteamBtnB) != 0u) {
+        add_assignment_candidate(SteamBackAction::East, found, count);
+    }
+    if ((new_buttons & kSteamBtnX) != 0u) {
+        add_assignment_candidate(SteamBackAction::West, found, count);
+    }
+    if ((new_buttons & kSteamBtnY) != 0u) {
+        add_assignment_candidate(SteamBackAction::North, found, count);
+    }
+    if ((new_buttons & kSteamBtnLeftBumper) != 0u) {
+        add_assignment_candidate(SteamBackAction::L1, found, count);
+    }
+    if ((new_buttons & kSteamBtnRightBumper) != 0u) {
+        add_assignment_candidate(SteamBackAction::R1, found, count);
+    }
+    if ((new_buttons & kSteamBtnLeftStick) != 0u) {
+        add_assignment_candidate(SteamBackAction::L3, found, count);
+    }
+    if ((new_buttons & kSteamBtnRightStick) != 0u) {
+        add_assignment_candidate(SteamBackAction::R3, found, count);
+    }
+    if ((new_buttons & kSteamBtnView) != 0u) {
+        add_assignment_candidate(SteamBackAction::Back, found, count);
+    }
+    if ((new_buttons & kSteamBtnMenu) != 0u) {
+        add_assignment_candidate(SteamBackAction::Start, found, count);
+    }
+    if ((new_buttons & kSteamBtnSteam) != 0u) {
+        add_assignment_candidate(SteamBackAction::Guide, found, count);
+    }
+    if ((new_buttons & kSteamBtnSteamMenu) != 0u) {
+        add_assignment_candidate(SteamBackAction::Capture, found, count);
+    }
+    if (input.left_trigger >= kSteamBackAssignTriggerThreshold &&
+        baseline.left_trigger < kSteamBackAssignTriggerThreshold) {
+        add_assignment_candidate(SteamBackAction::L2, found, count);
+    }
+    if (input.right_trigger >= kSteamBackAssignTriggerThreshold &&
+        baseline.right_trigger < kSteamBackAssignTriggerThreshold) {
+        add_assignment_candidate(SteamBackAction::R2, found, count);
+    }
+    if ((new_buttons & kSteamBtnRightPadClick) != 0u) {
+        add_assignment_candidate(SteamBackAction::R3, found, count);
+    }
+
+    if (count != 1u) {
+        return false;
+    }
+    out = found;
+    return true;
+}
+
+bool steam_back_pressed(const SteamControllerInput &input,
+                        SteamBackButton button)
+{
+    switch (button) {
+    case SteamBackButton::L4:
+        return (input.buttons & kSteamBtnL4) != 0u;
+    case SteamBackButton::R4:
+        return (input.buttons & kSteamBtnR4) != 0u;
+    case SteamBackButton::L5:
+        return (input.buttons & kSteamBtnL5) != 0u;
+    case SteamBackButton::R5:
+        return (input.buttons & kSteamBtnR5) != 0u;
+    default:
+        return false;
+    }
+}
+
+void apply_steam_back_action(SteamBackAction action, uint32_t &buttons)
+{
+    switch (action) {
+    case SteamBackAction::DpadUp:
+        buttons |= kNsUp;
+        break;
+    case SteamBackAction::DpadDown:
+        buttons |= kNsDown;
+        break;
+    case SteamBackAction::DpadLeft:
+        buttons |= kNsLeft;
+        break;
+    case SteamBackAction::DpadRight:
+        buttons |= kNsRight;
+        break;
+    case SteamBackAction::South:
+        buttons |= kNsB;
+        break;
+    case SteamBackAction::East:
+        buttons |= kNsA;
+        break;
+    case SteamBackAction::West:
+        buttons |= kNsY;
+        break;
+    case SteamBackAction::North:
+        buttons |= kNsX;
+        break;
+    case SteamBackAction::L1:
+        buttons |= kNsL;
+        break;
+    case SteamBackAction::R1:
+        buttons |= kNsR;
+        break;
+    case SteamBackAction::L2:
+        buttons |= kNsZL;
+        break;
+    case SteamBackAction::R2:
+        buttons |= kNsZR;
+        break;
+    case SteamBackAction::L3:
+        buttons |= kNsLeftStick;
+        break;
+    case SteamBackAction::R3:
+        buttons |= kNsRightStick;
+        break;
+    case SteamBackAction::Back:
+        buttons |= kNsMinus;
+        break;
+    case SteamBackAction::Start:
+        buttons |= kNsPlus;
+        break;
+    case SteamBackAction::Guide:
+        buttons |= kNsHome;
+        break;
+    case SteamBackAction::Capture:
+        buttons |= kNsCapture;
+        break;
+    case SteamBackAction::None:
+        break;
+    }
+}
+
+void apply_steam_back_mappings(const SteamControllerInput &input,
+                               const SteamBackMappings &mappings,
+                               uint32_t &buttons)
+{
+    for (std::size_t i = 0; i < mappings.size(); ++i) {
+        const auto back = static_cast<SteamBackButton>(i);
+        if (steam_back_pressed(input, back)) {
+            apply_steam_back_action(mappings[i], buttons);
+        }
+    }
+}
+
+bool deadline_reached(uint32_t now_ms, uint32_t deadline_ms)
+{
+    return static_cast<int32_t>(now_ms - deadline_ms) >= 0;
+}
+
 bool right_trackpad_active(const SteamControllerInput &input)
 {
     return (input.buttons &
@@ -335,7 +652,100 @@ int16_t steam_accel_to_switch(int16_t raw)
     return switch_accel_deadzone(static_cast<int16_t>(scaled));
 }
 
+SteamBackMappings steam_back_default_mappings()
+{
+    SteamBackMappings mappings{};
+    mappings[steam_back_index(SteamBackButton::L4)] = SteamBackAction::L1;
+    mappings[steam_back_index(SteamBackButton::R4)] = SteamBackAction::R1;
+    mappings[steam_back_index(SteamBackButton::L5)] = SteamBackAction::L3;
+    mappings[steam_back_index(SteamBackButton::R5)] = SteamBackAction::R3;
+    return mappings;
+}
+
+bool steam_back_mappings_valid(const SteamBackMappings &mappings)
+{
+    for (SteamBackAction action : mappings) {
+        if (!steam_back_action_valid(action)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void steam_back_normalize_mappings(SteamBackMappings &mappings)
+{
+    if (!steam_back_mappings_valid(mappings)) {
+        mappings = steam_back_default_mappings();
+    }
+}
+
+void steam_back_assignment_reset(SteamBackAssignmentState &state)
+{
+    state = {};
+}
+
+SteamBackAssignmentResult steam_back_assignment_process(
+    SteamControllerInput &input, const SteamControllerInput *previous_input,
+    SteamBackMappings &mappings, SteamBackAssignmentState &state,
+    uint32_t now_ms)
+{
+    SteamBackAssignmentResult result{};
+
+    if (state.suppress_until_release) {
+        if (assignment_inputs_released(input)) {
+            state.suppress_until_release = false;
+        }
+        input = {};
+        result.consumed = true;
+        return result;
+    }
+
+    if (state.active) {
+        SteamBackAction action = SteamBackAction::None;
+        if (deadline_reached(now_ms, state.deadline_ms)) {
+            steam_back_assignment_reset(state);
+            state.suppress_until_release = true;
+        } else if (action_from_assignment_input(input, state.baseline,
+                                                action)) {
+            mappings[steam_back_index(state.target)] = action;
+            steam_back_normalize_mappings(mappings);
+            steam_back_assignment_reset(state);
+            state.suppress_until_release = true;
+            result.mapping_changed = true;
+        }
+        input = {};
+        result.consumed = true;
+        return result;
+    }
+
+    if (!steam_left_trackpad_center_modifier(input)) {
+        return result;
+    }
+
+    const uint32_t previous_buttons =
+        previous_input == nullptr ? 0u : previous_input->buttons;
+    SteamBackButton target = SteamBackButton::L4;
+    if (!single_back_rising(input.buttons & ~previous_buttons, target)) {
+        return result;
+    }
+
+    state.active = true;
+    state.target = target;
+    state.deadline_ms = now_ms + kSteamBackAssignTimeoutMs;
+    state.baseline = input;
+    input = {};
+    result.consumed = true;
+    result.assignment_started = true;
+    return result;
+}
+
 SwitchProState map_steam_to_switch(const SteamControllerInput &input)
+{
+    return map_steam_to_switch(input, steam_back_default_mappings());
+}
+
+SwitchProState map_steam_to_switch(const SteamControllerInput &input,
+                                   const SteamBackMappings &back_mappings)
 {
     SwitchProState state{};
     uint32_t buttons = 0;
@@ -388,6 +798,7 @@ SwitchProState map_steam_to_switch(const SteamControllerInput &input)
     if (input.buttons & kSteamBtnRightPadClick) {
         buttons |= kNsRightStick;
     }
+    apply_steam_back_mappings(input, back_mappings, buttons);
 
     const bool use_right_pad = right_trackpad_active(input);
     const int16_t right_x =
