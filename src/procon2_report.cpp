@@ -79,6 +79,8 @@ uint32_t procon2_button_bits_to_switch(uint32_t bits)
     add_button(bits, 11, kNsLeftStick, buttons);
     add_button(bits, 12, kNsHome, buttons);
     add_button(bits, 13, kNsCapture, buttons);
+    add_button(bits, 20, kNsHome, buttons);
+    add_button(bits, 21, kNsCapture, buttons);
     add_button(bits, 16, kNsDown, buttons);
     add_button(bits, 17, kNsUp, buttons);
     add_button(bits, 18, kNsRight, buttons);
@@ -234,8 +236,9 @@ bool parse_procon2_report05(const uint8_t *report, std::size_t size,
                             const Procon2Calibration &calibration,
                             SwitchProState &out)
 {
-    if (report == nullptr || size < kProcon2Report05MinSize ||
-        report[0] != kProcon2InputReport05) {
+    // BLE handle 0x000a streams Report 0x05's payload without a report-ID
+    // prefix; byte 0 is the controller timer. Match OGX/Bluepad32's parser.
+    if (report == nullptr || size < kProcon2Report05MinSize) {
         return false;
     }
 
@@ -272,7 +275,7 @@ bool parse_procon2_report05(const uint8_t *report, std::size_t size,
             parsed.accel_z = az;
             parsed.gyro_x = gy;
             parsed.gyro_y = neg_sat(gx);
-            parsed.gyro_z = neg_sat(gz);
+            parsed.gyro_z = gz;
         }
     }
 

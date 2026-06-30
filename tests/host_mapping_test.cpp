@@ -290,11 +290,12 @@ void test_procon2_manufacturer_data_parser()
 void test_procon2_report05_parser()
 {
     std::array<uint8_t, 63> report{};
-    report[0] = kProcon2InputReport05;
+    report[0] = 0xa7u; // BLE payload timer byte, not a report-ID prefix.
     const uint32_t buttons =
         (1u << 0) | (1u << 1) | (1u << 2) | (1u << 3) |
         (1u << 6) | (1u << 7) | (1u << 8) | (1u << 9) |
         (1u << 10) | (1u << 11) | (1u << 12) | (1u << 13) |
+        (1u << 20) | (1u << 21) |
         (1u << 16) | (1u << 17) | (1u << 18) | (1u << 19) |
         (1u << 22) | (1u << 23);
     write_u32_le(&report[4], buttons);
@@ -339,13 +340,13 @@ void test_procon2_report05_parser()
     assert(state.accel_z == 300);
     assert(state.gyro_x == 500);
     assert(state.gyro_y == 400);
-    assert(state.gyro_z == 600);
+    assert(state.gyro_z == -600);
 }
 
 void test_procon2_report05_calibration()
 {
     std::array<uint8_t, 63> report{};
-    report[0] = kProcon2InputReport05;
+    report[0] = 0x42u;
     pack_switch_stick12(&report[10], 0x0c00, 0x0c00);
     pack_switch_stick12(&report[13], 0x0800, 0x0800);
 

@@ -264,8 +264,17 @@ bool reconnect_target_is_local(const Procon2Advertisement &adv)
     }
     bd_addr_t local{};
     gap_local_bd_addr(local);
-    return std::memcmp(adv.reconnect_mac.data(), local,
-                       adv.reconnect_mac.size()) == 0;
+    if (std::memcmp(adv.reconnect_mac.data(), local,
+                    adv.reconnect_mac.size()) == 0) {
+        return true;
+    }
+    for (std::size_t i = 0; i < adv.reconnect_mac.size(); ++i) {
+        if (adv.reconnect_mac[i] !=
+            local[adv.reconnect_mac.size() - 1u - i]) {
+            return false;
+        }
+    }
+    return true;
 }
 
 void bind_characteristic(const gatt_client_characteristic_t &ch)
