@@ -101,6 +101,8 @@ constexpr uint32_t kProcon2BackMappingsTlvTag = 0x5032424bu; // ASCII 'P2BK'
 constexpr uint32_t kSwitch2RegistrationSignalTimeoutMs = 500;
 constexpr uint32_t kSwitch2RegistrationTimeoutMs = 12000;
 constexpr uint32_t kSwitch2RegistrationFinalizeGraceMs = 250;
+constexpr uint32_t kDualSensePowerOffCombo = kPsButton | kPsTriangle;
+constexpr uint32_t kSteamPowerOffCombo = kSteamBtnSteam | kSteamBtnY;
 constexpr uint8_t kDebugLogReadFeatureReportId = 0x7e;
 constexpr uint8_t kDebugLogControlFeatureReportId = 0x7f;
 constexpr uint8_t kDebugAudioCountersFeatureReportId = 0x7c;
@@ -674,6 +676,14 @@ void __not_in_flash_func(on_classic_hid_data)(ClassicHidChannel channel,
         select_switch2_pro_persona();
     }
 
+    const bool power_off_combo_down =
+        (input.buttons & kDualSensePowerOffCombo) == kDualSensePowerOffCombo;
+    if (power_off_combo_down &&
+        (g_last_ds_buttons & kDualSensePowerOffCombo) !=
+            kDualSensePowerOffCombo) {
+        (void)classic_hid_power_off_active_controller();
+    }
+
     const bool home_down = (input.buttons & kPsButton) != 0;
     const bool home_edge = home_down && (g_last_ds_buttons & kPsButton) == 0;
     g_last_ds_buttons = input.buttons;
@@ -729,6 +739,14 @@ void __not_in_flash_func(on_steam_hog_bt_data)(SteamHogBtControllerKind kind,
         select_switch_pro_persona();
     } else if (combo.request == PersonaComboRequest::Switch2Pro) {
         select_switch2_pro_persona();
+    }
+
+    const bool power_off_combo_down =
+        (input.buttons & kSteamPowerOffCombo) == kSteamPowerOffCombo;
+    if (power_off_combo_down &&
+        (g_last_steam_buttons & kSteamPowerOffCombo) !=
+            kSteamPowerOffCombo) {
+        (void)steam_hog_bt_power_off();
     }
 
     load_steam_back_mappings();
