@@ -11,6 +11,7 @@
 #include "switch_bridge/dualsense_report.h"
 #include "switch_bridge/procon2_ble.h"
 #include "switch_bridge/procon2_handshake.h"
+#include "switch_bridge/procon2_report.h"
 #include "switch_bridge/persona_combo_filter.h"
 #include "switch_bridge/steam_controller.h"
 #include "switch_bridge/steam_hog_bt.h"
@@ -86,10 +87,17 @@ SteamControllerInput g_last_steam_input{};
 bool g_last_steam_input_valid = false;
 bool g_steam_back_mappings_loaded = false;
 bool g_steam_back_mappings_dirty = false;
+Procon2BackMappings g_procon2_back_mappings = procon2_back_default_mappings();
+Procon2BackAssignmentState g_procon2_back_assignment{};
+SwitchProState g_last_procon2_state{};
+bool g_last_procon2_state_valid = false;
+bool g_procon2_back_mappings_loaded = false;
+bool g_procon2_back_mappings_dirty = false;
 
 constexpr uint32_t kUsbUnmountDebounceMs = 1000;
 constexpr uint32_t kHomeWakePendingWindowMs = 3000;
 constexpr uint32_t kSteamBackMappingsTlvTag = 0x5354424bu; // ASCII 'STBK'
+constexpr uint32_t kProcon2BackMappingsTlvTag = 0x5032424bu; // ASCII 'P2BK'
 constexpr uint32_t kSwitch2RegistrationSignalTimeoutMs = 500;
 constexpr uint32_t kSwitch2RegistrationTimeoutMs = 12000;
 constexpr uint32_t kSwitch2RegistrationFinalizeGraceMs = 250;
@@ -381,12 +389,35 @@ void reset_steam_back_assignment_runtime()
     g_last_steam_input_valid = false;
 }
 
-bool steam_back_tlv(const btstack_tlv_t *&tlv, void *&tlv_context)
+void reset_procon2_back_assignment_runtime()
+{
+    procon2_back_assignment_reset(g_procon2_back_assignment);
+    g_last_procon2_state = {};
+    g_last_procon2_state_valid = false;
+}
+
+bool controller_mapping_tlv(const btstack_tlv_t *&tlv, void *&tlv_context)
 {
     tlv = nullptr;
     tlv_context = nullptr;
     btstack_tlv_get_instance(&tlv, &tlv_context);
     return tlv != nullptr;
+}
+
+uint32_t read_u32_le_main(const uint8_t *p)
+{
+    return static_cast<uint32_t>(p[0]) |
+           (static_cast<uint32_t>(p[1]) << 8u) |
+           (static_cast<uint32_t>(p[2]) << 16u) |
+           (static_cast<uint32_t>(p[3]) << 24u);
+}
+
+void write_u32_le_main(uint8_t *p, uint32_t value)
+{
+    p[0] = static_cast<uint8_t>(value);
+    p[1] = static_cast<uint8_t>(value >> 8u);
+    p[2] = static_cast<uint8_t>(value >> 16u);
+    p[3] = static_cast<uint8_t>(value >> 24u);
 }
 
 void load_steam_back_mappings()
@@ -397,7 +428,7 @@ void load_steam_back_mappings()
 
     const btstack_tlv_t *tlv = nullptr;
     void *tlv_context = nullptr;
-    if (!steam_back_tlv(tlv, tlv_context)) {
+    if (!controller_mapping_tlv(tlv, tlv_context)) {
         return;
     }
     g_steam_back_mappings_loaded = true;
@@ -431,7 +462,7 @@ void persist_steam_back_mappings_if_dirty()
 
     const btstack_tlv_t *tlv = nullptr;
     void *tlv_context = nullptr;
-    if (!steam_back_tlv(tlv, tlv_context)) {
+    if (!controller_mapping_tlv(tlv, tlv_context)) {
         return;
     }
 
@@ -442,6 +473,66 @@ void persist_steam_back_mappings_if_dirty()
     (void)tlv->store_tag(tlv_context, kSteamBackMappingsTlvTag, raw,
                          sizeof(raw));
     g_steam_back_mappings_dirty = false;
+}
+
+void load_procon2_back_mappings()
+{
+    if (g_procon2_back_mappings_loaded) {
+        return;
+    }
+
+    const btstack_tlv_t *tlv = nullptr;
+    void *tlv_context = nullptr;
+    if (!controller_mapping_tlv(tlv, tlv_context)) {
+        return;
+    }
+    g_procon2_back_mappings_loaded = true;
+
+    constexpr std::size_t kRawSize =
+        static_cast<std::size_t>(Procon2BackButton::Count) * sizeof(uint32_t);
+    uint8_t raw[kRawSize]{};
+    const int len =
+        tlv->get_tag(tlv_context, kProcon2BackMappingsTlvTag, raw, sizeof(raw));
+    if (len != static_cast<int>(sizeof(raw))) {
+        return;
+    }
+
+    Procon2BackMappings loaded{};
+    for (std::size_t i = 0; i < loaded.size(); ++i) {
+        loaded[i] = read_u32_le_main(&raw[i * sizeof(uint32_t)]);
+    }
+    if (procon2_back_mappings_valid(loaded)) {
+        g_procon2_back_mappings = loaded;
+    }
+}
+
+void mark_procon2_back_mappings_dirty()
+{
+    g_procon2_back_mappings_dirty = true;
+}
+
+void persist_procon2_back_mappings_if_dirty()
+{
+    if (!g_procon2_back_mappings_dirty) {
+        return;
+    }
+
+    const btstack_tlv_t *tlv = nullptr;
+    void *tlv_context = nullptr;
+    if (!controller_mapping_tlv(tlv, tlv_context)) {
+        return;
+    }
+
+    constexpr std::size_t kRawSize =
+        static_cast<std::size_t>(Procon2BackButton::Count) * sizeof(uint32_t);
+    uint8_t raw[kRawSize]{};
+    for (std::size_t i = 0; i < g_procon2_back_mappings.size(); ++i) {
+        write_u32_le_main(&raw[i * sizeof(uint32_t)],
+                          g_procon2_back_mappings[i]);
+    }
+    (void)tlv->store_tag(tlv_context, kProcon2BackMappingsTlvTag, raw,
+                         sizeof(raw));
+    g_procon2_back_mappings_dirty = false;
 }
 
 void __not_in_flash_func(handle_xbox_input)(XboxControllerInput input)
@@ -706,6 +797,28 @@ void __not_in_flash_func(on_procon2_ble_data)(const SwitchProState &input_state)
         select_switch2_pro_persona();
     }
 
+    load_procon2_back_mappings();
+    const SwitchProState previous_state = g_last_procon2_state;
+    const Procon2BackAssignmentResult assignment =
+        procon2_back_assignment_process(
+            state, g_last_procon2_state_valid ? &previous_state : nullptr,
+            g_procon2_back_mappings, g_procon2_back_assignment, now);
+    if (assignment.mapping_changed) {
+        mark_procon2_back_mappings_dirty();
+        controller_feedback_play(ControllerFeedbackCue::BackMapping);
+    }
+    if (assignment.assignment_started) {
+        controller_feedback_play(ControllerFeedbackCue::BackMapping);
+    }
+    if (assignment.consumed) {
+        g_last_ns_buttons = state.buttons;
+        g_last_procon2_state = state;
+        g_last_procon2_state_valid = true;
+        g_procon_passthrough_valid = false;
+        g_switch_usb.set_state(state);
+        return;
+    }
+
     const bool home_down = (state.buttons & kNsHome) != 0;
     const bool home_edge = home_down && (g_last_ns_buttons & kNsHome) == 0;
     g_last_ns_buttons = state.buttons;
@@ -714,6 +827,10 @@ void __not_in_flash_func(on_procon2_ble_data)(const SwitchProState &input_state)
         g_home_wake_pending_ms = now;
     }
 
+    const SwitchProState raw_state = state;
+    procon2_apply_back_mappings(state, g_procon2_back_mappings);
+    g_last_procon2_state = raw_state;
+    g_last_procon2_state_valid = true;
     g_procon_passthrough_valid = false;
     g_switch_usb.set_state(state);
 }
@@ -914,6 +1031,7 @@ void __not_in_flash_func(service_procon2_ble_connection)()
 
     if (!ready) {
         g_last_ns_buttons = 0;
+        reset_procon2_back_assignment_runtime();
         g_procon_passthrough_valid = false;
         if (classic_hid_is_connected() || steam_hog_bt_is_connected()) {
             return;
@@ -937,6 +1055,7 @@ void __not_in_flash_func(service_procon2_ble_connection)()
     g_debug_usb_mode = false;
     g_auto_wake_armed = true;
     g_controller_connected_since_ms = board_millis();
+    reset_procon2_back_assignment_runtime();
     g_procon_passthrough_valid = false;
     usb_descriptors_set_controller_persona(UsbControllerPersona::SwitchPro);
     g_usb_persona = UsbAudioPersona::HidOnly;
@@ -1326,6 +1445,7 @@ void __no_inline_not_in_flash_func(app_loop)()
         service_usb_reconnect();
         classic_hid_persist_blacklist_if_dirty();
         persist_steam_back_mappings_if_dirty();
+        persist_procon2_back_mappings_if_dirty();
         service_led();
     }
 }

@@ -4,6 +4,7 @@
 #include "switch_bridge/dualsense_audio.h"
 #include "switch_bridge/classic_hid_bt.h"
 #include "switch_bridge/dualsense_output.h"
+#include "switch_bridge/procon2_ble.h"
 #include "switch_bridge/steam_hog_bt.h"
 #include "switch_bridge/switch_usb.h"
 #include "switch_bridge/xbox_controller.h"
@@ -16,8 +17,10 @@ namespace switchbridge {
 namespace {
 
 constexpr uint32_t kCueDurationMs = 96;
+constexpr uint32_t kBackMappingCueDurationMs = kCueDurationMs * 2u;
 constexpr uint8_t kSwitchProRumbleReportId = kSwitchOutputRumbleOnly;
 constexpr uint8_t kSwitchProWeakRumble[] = {0x00, 0x19, 0x40, 0x46};
+constexpr uint8_t kSwitchProBackMappingRumble[] = {0x00, 0x4b, 0x40, 0xd2};
 constexpr uint8_t kSwitchProSilentRumble[] = {0x00, 0x01, 0x40, 0x40};
 
 bool g_start_pending = false;
@@ -44,16 +47,42 @@ HapticCommand haptics_for_cue(ControllerFeedbackCue cue)
         command.left_pulse = 44;
         command.right_pulse = 44;
         break;
+    case ControllerFeedbackCue::BackMapping:
+        command.left_motor = 54;
+        command.right_motor = 54;
+        command.left_pulse = 108;
+        command.right_pulse = 108;
+        break;
     }
     return command;
 }
 
+uint32_t duration_for_cue(ControllerFeedbackCue cue)
+{
+    return cue == ControllerFeedbackCue::BackMapping ? kBackMappingCueDurationMs
+                                                     : kCueDurationMs;
+}
+
+const uint8_t *switch_rumble_for_cue(ControllerFeedbackCue cue, bool active)
+{
+    if (!active) {
+        return kSwitchProSilentRumble;
+    }
+    return cue == ControllerFeedbackCue::BackMapping ? kSwitchProBackMappingRumble
+                                                     : kSwitchProWeakRumble;
+}
+
 SwitchUsbFeedback switch_feedback_for_haptics(
-    const HapticCommand &command)
+    ControllerFeedbackCue cue, const HapticCommand &command)
 {
     SwitchUsbFeedback feedback{};
     feedback.has_rumble = true;
     feedback.haptics = command;
+    const uint8_t *packet = switch_rumble_for_cue(cue, command.active);
+    std::memcpy(feedback.left_rumble.data(), packet,
+                feedback.left_rumble.size());
+    std::memcpy(feedback.right_rumble.data(), packet,
+                feedback.right_rumble.size());
     return feedback;
 }
 
@@ -92,19 +121,19 @@ bool send_xbox_classic_feedback(const HapticCommand &command)
     return len != 0 && classic_hid_send_raw_output_report(report, len);
 }
 
-bool send_switch_pro_feedback(bool active)
+bool send_switch_pro_feedback(ControllerFeedbackCue cue, bool active)
 {
     uint8_t report[10]{};
     report[0] = kSwitchProRumbleReportId;
     report[1] = g_switch_pro_rumble_counter++;
-    const uint8_t *packet = active ? kSwitchProWeakRumble
-                                   : kSwitchProSilentRumble;
+    const uint8_t *packet = switch_rumble_for_cue(cue, active);
     std::memcpy(report + 2u, packet, sizeof(kSwitchProWeakRumble));
     std::memcpy(report + 6u, packet, sizeof(kSwitchProWeakRumble));
     return classic_hid_send_raw_output_report(report, sizeof(report));
 }
 
-bool send_classic_feedback(const HapticCommand &command)
+bool send_classic_feedback(ControllerFeedbackCue cue,
+                           const HapticCommand &command)
 {
     if (!classic_hid_is_connected()) {
         return false;
@@ -116,7 +145,7 @@ bool send_classic_feedback(const HapticCommand &command)
     case BtControllerKind::DualShock4:
         return send_dualshock4_feedback(command);
     case BtControllerKind::SwitchPro:
-        return send_switch_pro_feedback(command.active);
+        return send_switch_pro_feedback(cue, command.active);
     case BtControllerKind::Xbox:
         return send_xbox_classic_feedback(command);
     case BtControllerKind::Unknown:
@@ -125,20 +154,31 @@ bool send_classic_feedback(const HapticCommand &command)
     return false;
 }
 
-bool send_hogp_feedback(const HapticCommand &command)
+bool send_hogp_feedback(ControllerFeedbackCue cue, const HapticCommand &command)
 {
     if (!steam_hog_bt_is_connected()) {
         return false;
     }
     return steam_hog_bt_send_switch_feedback(
-        switch_feedback_for_haptics(command));
+        switch_feedback_for_haptics(cue, command));
 }
 
-bool send_feedback(const HapticCommand &command)
+bool send_procon2_feedback(ControllerFeedbackCue cue,
+                           const HapticCommand &command)
 {
-    const bool classic_sent = send_classic_feedback(command);
-    const bool hogp_sent = send_hogp_feedback(command);
-    return classic_sent || hogp_sent;
+    if (!procon2_ble_is_ready()) {
+        return false;
+    }
+    return procon2_ble_send_switch_feedback(
+        switch_feedback_for_haptics(cue, command));
+}
+
+bool send_feedback(ControllerFeedbackCue cue, const HapticCommand &command)
+{
+    const bool classic_sent = send_classic_feedback(cue, command);
+    const bool hogp_sent = send_hogp_feedback(cue, command);
+    const bool procon2_sent = send_procon2_feedback(cue, command);
+    return classic_sent || hogp_sent || procon2_sent;
 }
 
 } // namespace
@@ -153,16 +193,16 @@ void controller_feedback_service(uint32_t now_ms)
 {
     if (g_start_pending) {
         g_start_pending = false;
-        if (send_feedback(haptics_for_cue(g_pending_cue))) {
+        if (send_feedback(g_pending_cue, haptics_for_cue(g_pending_cue))) {
             g_stop_pending = true;
-            g_stop_at_ms = now_ms + kCueDurationMs;
+            g_stop_at_ms = now_ms + duration_for_cue(g_pending_cue);
         }
     }
 
     if (g_stop_pending &&
         static_cast<int32_t>(now_ms - g_stop_at_ms) >= 0) {
         HapticCommand stop{};
-        (void)send_feedback(stop);
+        (void)send_feedback(g_pending_cue, stop);
         g_stop_pending = false;
     }
 }

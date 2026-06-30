@@ -48,6 +48,9 @@ enum SwitchButton : uint32_t {
     kNsLeftStick = 1u << 15,
     kNsHome = 1u << 16,
     kNsCapture = 1u << 17,
+    kNsGR = 1u << 18,
+    kNsGL = 1u << 19,
+    kNsC = 1u << 20,
 };
 
 enum class PlayStationDpad : uint8_t {

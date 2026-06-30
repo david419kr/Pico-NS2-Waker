@@ -7,6 +7,7 @@ namespace switchbridge {
 enum class ControllerFeedbackCue : uint8_t {
     Connected,
     WakeDisconnect,
+    BackMapping,
 };
 
 void controller_feedback_play(ControllerFeedbackCue cue);

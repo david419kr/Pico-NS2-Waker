@@ -295,9 +295,10 @@ void test_procon2_report05_parser()
         (1u << 0) | (1u << 1) | (1u << 2) | (1u << 3) |
         (1u << 6) | (1u << 7) | (1u << 8) | (1u << 9) |
         (1u << 10) | (1u << 11) | (1u << 12) | (1u << 13) |
+        (1u << 14) |
         (1u << 20) | (1u << 21) |
         (1u << 16) | (1u << 17) | (1u << 18) | (1u << 19) |
-        (1u << 22) | (1u << 23);
+        (1u << 22) | (1u << 23) | (1u << 24) | (1u << 25);
     write_u32_le(&report[4], buttons);
     pack_switch_stick12(&report[10], 0x123, 0x456);
     pack_switch_stick12(&report[13], 0x789, 0xabc);
@@ -326,6 +327,9 @@ void test_procon2_report05_parser()
     assert((state.buttons & kNsRightStick) != 0);
     assert((state.buttons & kNsHome) != 0);
     assert((state.buttons & kNsCapture) != 0);
+    assert((state.buttons & kNsC) != 0);
+    assert((state.buttons & kNsGL) != 0);
+    assert((state.buttons & kNsGR) != 0);
     assert((state.buttons & kNsUp) != 0);
     assert((state.buttons & kNsDown) != 0);
     assert((state.buttons & kNsLeft) != 0);
@@ -341,6 +345,13 @@ void test_procon2_report05_parser()
     assert(state.gyro_x == 500);
     assert(state.gyro_y == 400);
     assert(state.gyro_z == -600);
+
+    std::array<uint8_t, 63> side_buttons_report{};
+    write_u32_le(&side_buttons_report[4], (1u << 20) | (1u << 21));
+    assert(parse_procon2_report05(side_buttons_report.data(),
+                                  side_buttons_report.size(), cal, state));
+    assert((state.buttons & kNsHome) == 0);
+    assert((state.buttons & kNsCapture) == 0);
 }
 
 void test_procon2_report05_calibration()
@@ -364,6 +375,62 @@ void test_procon2_report05_calibration()
     assert(state.left_y == 0x0fff);
     assert(state.right_x == 0x0800);
     assert(state.right_y == 0x0800);
+}
+
+void test_procon2_back_assignment_and_mapping()
+{
+    Procon2BackMappings mappings = procon2_back_default_mappings();
+    Procon2BackAssignmentState assignment{};
+
+    SwitchProState previous{};
+    SwitchProState start{};
+    start.buttons = kNsC | kNsGL;
+    Procon2BackAssignmentResult r = procon2_back_assignment_process(
+        start, &previous, mappings, assignment, 100);
+    assert(r.consumed);
+    assert(r.assignment_started);
+    assert(!r.mapping_changed);
+    assert(assignment.active);
+    assert(start.buttons == 0);
+
+    SwitchProState choose{};
+    choose.buttons = kNsC | kNsGL | kNsB;
+    r = procon2_back_assignment_process(choose, &previous, mappings,
+                                        assignment, 108);
+    assert(r.consumed);
+    assert(!r.assignment_started);
+    assert(r.mapping_changed);
+    assert(!assignment.active);
+    assert(assignment.suppress_until_release);
+    assert(mappings[static_cast<std::size_t>(Procon2BackButton::GL)] == kNsB);
+    assert(choose.buttons == 0);
+
+    SwitchProState held{};
+    held.buttons = kNsC | kNsGL | kNsB;
+    r = procon2_back_assignment_process(held, nullptr, mappings, assignment,
+                                        116);
+    assert(r.consumed);
+    assert(assignment.suppress_until_release);
+
+    SwitchProState released{};
+    r = procon2_back_assignment_process(released, nullptr, mappings, assignment,
+                                        124);
+    assert(r.consumed);
+    assert(!assignment.suppress_until_release);
+
+    SwitchProState mapped{};
+    mapped.buttons = kNsC | kNsGL | kNsGR;
+    procon2_apply_back_mappings(mapped, mappings);
+    assert((mapped.buttons & kNsC) == 0);
+    assert((mapped.buttons & kNsGL) == 0);
+    assert((mapped.buttons & kNsB) != 0);
+    assert((mapped.buttons & kNsGR) != 0);
+
+    SwitchProState no_modifier{};
+    no_modifier.buttons = kNsGR;
+    r = procon2_back_assignment_process(no_modifier, nullptr, mappings,
+                                        assignment, 132);
+    assert(!r.consumed);
 }
 
 void test_procon2_vibration_encoders()
@@ -1651,13 +1718,14 @@ void test_switch2_pro_button_bytes()
     assert(out[1] == 0xc0u);
     assert(out[2] == 0x00u);
 
-    switch2_pro_button_bytes(kNsHome | kNsCapture | kNsDown | kNsUp | kNsLeft |
-                                 kNsRight | kNsL | kNsZL,
+    switch2_pro_button_bytes(kNsHome | kNsCapture | kNsGR | kNsGL | kNsC |
+                                 kNsDown | kNsUp | kNsLeft | kNsRight |
+                                 kNsL | kNsZL,
                              out);
     // byte2 holds bits 16..20: Home(16), Capture(17), Down(8)->byte2? no.
     // Down=bit8 -> byte1 bit0; Up=bit11 -> byte1 bit3; etc. Verify by formula.
-    uint32_t b = kNsHome | kNsCapture | kNsDown | kNsUp | kNsLeft | kNsRight |
-                 kNsL | kNsZL;
+    uint32_t b = kNsHome | kNsCapture | kNsGR | kNsGL | kNsC | kNsDown |
+                 kNsUp | kNsLeft | kNsRight | kNsL | kNsZL;
     assert(out[0] == (uint8_t)(b & 0xffu));
     assert(out[1] == (uint8_t)((b >> 8) & 0xffu));
     assert(out[2] == (uint8_t)((b >> 16) & 0x1fu));
@@ -1799,6 +1867,7 @@ int main()
     test_procon2_manufacturer_data_parser();
     test_procon2_report05_parser();
     test_procon2_report05_calibration();
+    test_procon2_back_assignment_and_mapping();
     test_procon2_vibration_encoders();
     test_steam_controller_input_parser_and_mapping();
     test_steam_back_assignment_and_mapping();

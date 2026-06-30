@@ -11,6 +11,16 @@ namespace {
 constexpr uint32_t kQ15One = 32768u;
 constexpr uint16_t kCenteredFullScale = 2047u;
 constexpr uint16_t kNeutral12 = 2048u;
+constexpr uint32_t kProcon2BackAssignTimeoutMs = 8000;
+constexpr uint32_t kProcon2BackButtonMask = kNsGL | kNsGR;
+constexpr uint32_t kProcon2AssignableButtonMask =
+    kNsB | kNsA | kNsY | kNsX | kNsL | kNsR | kNsZL | kNsZR | kNsMinus |
+    kNsPlus | kNsLeftStick | kNsRightStick | kNsHome | kNsCapture | kNsUp |
+    kNsDown | kNsLeft | kNsRight;
+constexpr uint32_t kProcon2BackMappingMask =
+    kProcon2AssignableButtonMask | kNsGL | kNsGR;
+constexpr uint32_t kProcon2BackAssignmentReleaseMask =
+    kNsC | kProcon2BackButtonMask | kProcon2AssignableButtonMask;
 
 uint16_t read_u16_le(const uint8_t *p)
 {
@@ -79,15 +89,71 @@ uint32_t procon2_button_bits_to_switch(uint32_t bits)
     add_button(bits, 11, kNsLeftStick, buttons);
     add_button(bits, 12, kNsHome, buttons);
     add_button(bits, 13, kNsCapture, buttons);
-    add_button(bits, 20, kNsHome, buttons);
-    add_button(bits, 21, kNsCapture, buttons);
+    add_button(bits, 14, kNsC, buttons);
     add_button(bits, 16, kNsDown, buttons);
     add_button(bits, 17, kNsUp, buttons);
     add_button(bits, 18, kNsRight, buttons);
     add_button(bits, 19, kNsLeft, buttons);
     add_button(bits, 22, kNsL, buttons);
     add_button(bits, 23, kNsZL, buttons);
+    add_button(bits, 24, kNsGR, buttons);
+    add_button(bits, 25, kNsGL, buttons);
     return buttons;
+}
+
+constexpr std::size_t procon2_back_index(Procon2BackButton button)
+{
+    return static_cast<std::size_t>(button);
+}
+
+bool deadline_reached(uint32_t now_ms, uint32_t deadline_ms)
+{
+    return static_cast<int32_t>(now_ms - deadline_ms) >= 0;
+}
+
+bool single_button_bit(uint32_t buttons)
+{
+    return buttons != 0u && (buttons & (buttons - 1u)) == 0u;
+}
+
+bool procon2_back_button_from_bit(uint32_t bit, Procon2BackButton &out)
+{
+    if (bit == kNsGL) {
+        out = Procon2BackButton::GL;
+        return true;
+    }
+    if (bit == kNsGR) {
+        out = Procon2BackButton::GR;
+        return true;
+    }
+    return false;
+}
+
+bool single_back_rising(uint32_t rising, Procon2BackButton &out)
+{
+    const uint32_t candidates = rising & kProcon2BackButtonMask;
+    return single_button_bit(candidates) &&
+           procon2_back_button_from_bit(candidates, out);
+}
+
+bool assignment_inputs_released(const SwitchProState &state)
+{
+    return (state.buttons & kProcon2BackAssignmentReleaseMask) == 0u;
+}
+
+uint32_t action_from_assignment_input(const SwitchProState &state,
+                                      uint32_t baseline_buttons)
+{
+    const uint32_t candidates =
+        (state.buttons & ~baseline_buttons) & kProcon2AssignableButtonMask;
+    return single_button_bit(candidates) ? candidates : 0u;
+}
+
+bool procon2_back_mapping_valid(uint32_t mapping)
+{
+    return mapping == 0u ||
+           ((mapping & kProcon2BackMappingMask) == mapping &&
+            single_button_bit(mapping));
 }
 
 int16_t calibrate_axis(uint16_t raw, const Procon2StickAxisCalibration &cal,
@@ -281,6 +347,104 @@ bool parse_procon2_report05(const uint8_t *report, std::size_t size,
 
     out = parsed;
     return true;
+}
+
+Procon2BackMappings procon2_back_default_mappings()
+{
+    Procon2BackMappings mappings{};
+    mappings[procon2_back_index(Procon2BackButton::GL)] = kNsGL;
+    mappings[procon2_back_index(Procon2BackButton::GR)] = kNsGR;
+    return mappings;
+}
+
+bool procon2_back_mappings_valid(const Procon2BackMappings &mappings)
+{
+    for (uint32_t mapping : mappings) {
+        if (!procon2_back_mapping_valid(mapping)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void procon2_back_normalize_mappings(Procon2BackMappings &mappings)
+{
+    if (!procon2_back_mappings_valid(mappings)) {
+        mappings = procon2_back_default_mappings();
+    }
+}
+
+void procon2_back_assignment_reset(Procon2BackAssignmentState &state)
+{
+    state = {};
+}
+
+Procon2BackAssignmentResult procon2_back_assignment_process(
+    SwitchProState &state, const SwitchProState *previous_state,
+    Procon2BackMappings &mappings, Procon2BackAssignmentState &assignment,
+    uint32_t now_ms)
+{
+    Procon2BackAssignmentResult result{};
+
+    if (assignment.suppress_until_release) {
+        if (assignment_inputs_released(state)) {
+            assignment.suppress_until_release = false;
+        }
+        state = {};
+        result.consumed = true;
+        return result;
+    }
+
+    if (assignment.active) {
+        const uint32_t action =
+            action_from_assignment_input(state, assignment.baseline_buttons);
+        if (deadline_reached(now_ms, assignment.deadline_ms)) {
+            procon2_back_assignment_reset(assignment);
+            assignment.suppress_until_release = true;
+        } else if (action != 0u) {
+            mappings[procon2_back_index(assignment.target)] = action;
+            procon2_back_normalize_mappings(mappings);
+            procon2_back_assignment_reset(assignment);
+            assignment.suppress_until_release = true;
+            result.mapping_changed = true;
+        }
+        state = {};
+        result.consumed = true;
+        return result;
+    }
+
+    if ((state.buttons & kNsC) == 0u) {
+        return result;
+    }
+
+    const uint32_t previous_buttons =
+        previous_state == nullptr ? 0u : previous_state->buttons;
+    Procon2BackButton target = Procon2BackButton::GL;
+    if (!single_back_rising(state.buttons & ~previous_buttons, target)) {
+        return result;
+    }
+
+    assignment.active = true;
+    assignment.target = target;
+    assignment.deadline_ms = now_ms + kProcon2BackAssignTimeoutMs;
+    assignment.baseline_buttons = state.buttons;
+    state = {};
+    result.consumed = true;
+    result.assignment_started = true;
+    return result;
+}
+
+void procon2_apply_back_mappings(SwitchProState &state,
+                                 const Procon2BackMappings &mappings)
+{
+    const uint32_t raw_buttons = state.buttons;
+    state.buttons &= ~(kNsC | kNsGL | kNsGR);
+    if ((raw_buttons & kNsGL) != 0u) {
+        state.buttons |= mappings[procon2_back_index(Procon2BackButton::GL)];
+    }
+    if ((raw_buttons & kNsGR) != 0u) {
+        state.buttons |= mappings[procon2_back_index(Procon2BackButton::GR)];
+    }
 }
 
 std::size_t build_procon2_vibration33(const SwitchRumblePacket &left,
