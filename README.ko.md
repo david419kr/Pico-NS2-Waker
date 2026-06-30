@@ -41,11 +41,11 @@ Credits:
 
 ## Nintendo Switch 2 깨우기
 
-Pico 2 W를 처음 연결시에는 Switch 2 를 켠 상태로 연결하여 등록하여야 합니다.
+Pico 2 W를 Switch 2에 연결하면 Bluetooth 컨트롤러 연결 여부와 관계없이 Switch 2 Pro 등록용 USB handshake를 한 번 시도합니다.
 
-1. Switch2를 켭니다. Pico 2 W를 Switch 2에 연결하고, 컨트롤러를 Pico 2 W에 연결합니다.
-2. Switch 2에 컨트롤러가 등록되어 조작 가능해질 때 까지 기다립니다.
-3. Switch 2를 슬립 모드로 둡니다.
+1. Switch 2를 켭니다. Pico 2 W를 Switch 2에 연결합니다.
+2. 등록용 handshake가 끝나면 USB가 한 번 끊깁니다.
+3. 컨트롤러를 Pico 2 W에 연결하고 Switch 2를 슬립 모드로 둡니다.
 4. 이후, 컨트롤러의 PS/Home/Steam/Guide 버튼을 눌러 Switch 2를 깨울 수 있습니다.
 
 깨우기 중에는 Bluetooth 컨트롤러 연결이 한 번 끊깁니다. Switch 2가 켜진 뒤 컨트롤러의 PS/Home/Steam/Guide 버튼을 한 번 더 눌러 다시 켜고 재연결해 주세요.
@@ -106,7 +106,7 @@ build\pico2_w\switchbridge.uf2
 
 ## 문제 해결
 
-- Switch에 컨트롤러가 보이지 않으면 컨트롤러가 Pico 2 W에 연결되어 있는지 확인하세요. Bluetooth 컨트롤러가 연결되지 않은 상태에서는 컨트롤러 장치를 노출하지 않습니다.
+- Switch에 컨트롤러가 보이지 않으면 컨트롤러가 Pico 2 W에 연결되어 있는지 확인하세요. Bluetooth 컨트롤러가 연결되지 않은 상태에서는 짧은 Switch 2 Pro 등록용 handshake 외에는 컨트롤러 장치를 노출하지 않습니다.
 - 다른 컨트롤러를 연결하고 싶으면 BOOTSEL을 2번 클릭해서 현재 연결을 끊은 뒤 새 컨트롤러를 페어링하세요.
 - 자동 재연결이 꼬이면 BOOTSEL을 길게 눌러 저장된 페어링을 삭제한 뒤 다시 페어링하세요.
 - DualSense 사용시 오디오 출력이 보이지 않으면 DualSense의 3.5 mm 단자에 이어폰/헤드셋이 꽂혀 있는지 확인하세요.

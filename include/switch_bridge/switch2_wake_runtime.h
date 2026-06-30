@@ -15,14 +15,6 @@ void switch2_wake_init();
 void switch2_wake_set_target_from_usb_pairing(const uint8_t addr_wire[6]);
 bool switch2_wake_has_target();
 
-// Persist and query whether the Switch 2 Pro registration/whitelist handshake
-// completed for the current wake target and controller BD_ADDR. The controller
-// address is in HID/USB wire order, matching the ProCon2 business card.
-bool switch2_wake_registration_complete(const uint8_t controller_addr_wire[6]);
-bool switch2_wake_mark_registration_complete(
-    const uint8_t controller_addr_wire[6]);
-void switch2_wake_clear_registration_complete();
-
 // Request a wake attempt. The caller is responsible for checking user policy
 // such as "USB has been unmounted long enough" and "PS/Home edge happened".
 bool switch2_wake_request();

@@ -13,7 +13,6 @@
 #include "switch_bridge/persona_combo_filter.h"
 #include "switch_bridge/steam_controller.h"
 #include "switch_bridge/steam_hog_bt.h"
-#include "switch_bridge/switch2_auto_registration.h"
 #include "switch_bridge/switch_identity.h"
 #include "switch_bridge/switch_pro.h"
 #include "switch_bridge/switch_usb.h"
@@ -64,7 +63,13 @@ bool g_auto_wake_armed = false;
 uint32_t g_controller_connected_since_ms = 0;
 uint8_t g_switch2_report_counter = 0;
 PersonaComboFilter g_persona_combo_filter;
-Switch2AutoRegistration g_switch2_auto_registration;
+bool g_switch2_registration_active = false;
+bool g_switch2_registration_done = false;
+bool g_switch2_registration_finish_pending = false;
+bool g_switch2_registration_host_seen = false;
+bool g_switch2_registration_signal_seen = false;
+uint32_t g_switch2_registration_started_ms = 0;
+uint32_t g_switch2_registration_finish_at_ms = 0;
 SwitchReport g_procon_passthrough_report{};
 bool g_procon_passthrough_valid = false;
 uint32_t g_debug_log_read_offset = 0;
@@ -76,6 +81,9 @@ SteamTrackpadHapticState g_steam_trackpad_haptics{};
 
 constexpr uint32_t kUsbUnmountDebounceMs = 1000;
 constexpr uint32_t kHomeWakePendingWindowMs = 3000;
+constexpr uint32_t kSwitch2RegistrationSignalTimeoutMs = 500;
+constexpr uint32_t kSwitch2RegistrationTimeoutMs = 12000;
+constexpr uint32_t kSwitch2RegistrationFinalizeGraceMs = 250;
 constexpr uint8_t kDebugLogReadFeatureReportId = 0x7e;
 constexpr uint8_t kDebugLogControlFeatureReportId = 0x7f;
 constexpr uint8_t kDebugAudioCountersFeatureReportId = 0x7c;
@@ -207,11 +215,29 @@ void select_switch_pro_persona()
 // USB-audio interfaces at all.
 void select_switch2_pro_persona()
 {
+    const uint32_t now = board_millis();
+    const bool host_seen = tud_connected() || tud_mounted();
     if (usb_descriptors_controller_persona() ==
         UsbControllerPersona::Switch2ProRegistration) {
+        if (!g_switch2_registration_active) {
+            g_switch2_registration_active = true;
+            g_switch2_registration_done = false;
+            g_switch2_registration_finish_pending = false;
+            g_switch2_registration_host_seen = host_seen;
+            g_switch2_registration_signal_seen = false;
+            g_switch2_registration_started_ms = host_seen ? now : 0;
+            g_switch2_registration_finish_at_ms = 0;
+        }
         return;
     }
     g_switch2_report_counter = 0;
+    g_switch2_registration_active = true;
+    g_switch2_registration_done = false;
+    g_switch2_registration_finish_pending = false;
+    g_switch2_registration_host_seen = host_seen;
+    g_switch2_registration_signal_seen = false;
+    g_switch2_registration_started_ms = host_seen ? now : 0;
+    g_switch2_registration_finish_at_ms = 0;
     procon2_handshake_reset();
     usb_descriptors_set_controller_persona(
         UsbControllerPersona::Switch2ProRegistration);
@@ -296,6 +322,46 @@ bool bt_controller_connected()
 bool steam_hog_controller_is_xbox()
 {
     return steam_hog_bt_controller_kind() == SteamHogBtControllerKind::Xbox;
+}
+
+void finish_switch2_registration_attempt()
+{
+    g_switch2_registration_active = false;
+    g_switch2_registration_done = true;
+    g_switch2_registration_finish_pending = false;
+    g_switch2_registration_host_seen = false;
+    g_switch2_registration_signal_seen = false;
+    g_switch2_registration_finish_at_ms = 0;
+    g_pending_count = 0;
+
+    usb_descriptors_set_controller_persona(UsbControllerPersona::SwitchPro);
+    g_usb_persona = classic_hid_controller_kind() == BtControllerKind::DualSense
+        ? dualsense_audio_desired_persona()
+        : UsbAudioPersona::HidOnly;
+    usb_descriptors_set_audio_persona(g_usb_persona);
+    tud_disconnect();
+    g_usb_reconnect_pending = false;
+
+    if (bt_controller_connected()) {
+        request_usb_reconnect();
+    }
+}
+
+void schedule_switch2_registration_finish()
+{
+    g_switch2_registration_finish_pending = true;
+    g_switch2_registration_finish_at_ms =
+        board_millis() + kSwitch2RegistrationFinalizeGraceMs;
+}
+
+void note_switch2_registration_signal_seen()
+{
+    const uint32_t now = board_millis();
+    g_switch2_registration_signal_seen = true;
+    if (!g_switch2_registration_host_seen) {
+        g_switch2_registration_host_seen = true;
+        g_switch2_registration_started_ms = now;
+    }
 }
 
 void __not_in_flash_func(handle_xbox_input)(XboxControllerInput input)
@@ -455,7 +521,7 @@ void __not_in_flash_func(on_classic_hid_data)(ClassicHidChannel channel,
 
     dualsense_audio_update_status(input);
     if (usb_descriptors_controller_persona() == UsbControllerPersona::SwitchPro &&
-        !g_switch2_auto_registration.blocks_audio_reconnect() &&
+        !g_switch2_registration_active &&
         bt_controller_is_dualsense() &&
         dualsense_audio_desired_persona() != g_usb_persona) {
         g_usb_persona = dualsense_audio_desired_persona();
@@ -724,37 +790,68 @@ bool __not_in_flash_func(usb_sleep_candidate)(uint32_t now)
            now - g_usb_unmounted_since_ms >= kUsbUnmountDebounceMs;
 }
 
-void __not_in_flash_func(service_switch2_auto_registration)()
+void __not_in_flash_func(service_switch2_registration_probe)()
 {
-    uint8_t ctrl_addr_wire[6]{};
-    controller_addr_wire(ctrl_addr_wire);
+    if (g_debug_usb_mode) {
+        return;
+    }
 
-    const bool switch2_persona_active =
-        usb_descriptors_controller_persona() ==
-        UsbControllerPersona::Switch2ProRegistration;
+    if (!g_switch2_registration_active) {
+        if (!g_switch2_registration_done && !g_usb_reconnect_pending) {
+            // One USB registration probe is allowed without a BT controller.
+            // Normal controller USB exposure still waits for bt_controller_connected().
+            select_switch2_pro_persona();
+        }
+        return;
+    }
 
-    Switch2AutoRegistrationInputs inputs{};
-    inputs.now_ms = board_millis();
-    inputs.usb_mounted = tud_mounted();
-    inputs.controller_connected = bt_controller_connected();
-    inputs.debug_usb_mode = g_debug_usb_mode;
-    inputs.usb_reconnect_pending = g_usb_reconnect_pending;
-    inputs.switch2_persona_active = switch2_persona_active;
-    inputs.registration_complete =
-        switch2_wake_registration_complete(ctrl_addr_wire);
+    const uint32_t now = board_millis();
+    if (!g_switch2_registration_host_seen &&
+        (tud_connected() || tud_mounted())) {
+        g_switch2_registration_host_seen = true;
+        g_switch2_registration_started_ms = now;
+    }
 
-    const Switch2AutoRegistrationAction action =
-        g_switch2_auto_registration.service(inputs);
-    switch (action) {
-    case Switch2AutoRegistrationAction::EnterSwitch2RegistrationPersona:
+    if (usb_descriptors_controller_persona() !=
+        UsbControllerPersona::Switch2ProRegistration) {
+        g_switch2_registration_active = false;
+        g_switch2_registration_done = true;
+        g_switch2_registration_finish_pending = false;
+        g_switch2_registration_host_seen = false;
+        g_switch2_registration_signal_seen = false;
+        g_switch2_registration_finish_at_ms = 0;
+        g_pending_count = 0;
+        return;
+    }
+
+    if (g_switch2_registration_finish_pending &&
+        static_cast<int32_t>(now - g_switch2_registration_finish_at_ms) >= 0) {
+        finish_switch2_registration_attempt();
+        return;
+    }
+
+    if (!g_switch2_registration_host_seen) {
+        return;
+    }
+
+    if (!g_switch2_registration_signal_seen &&
+        now - g_switch2_registration_started_ms >=
+            kSwitch2RegistrationSignalTimeoutMs) {
+        finish_switch2_registration_attempt();
+        return;
+    }
+
+    if (now - g_switch2_registration_started_ms >=
+        kSwitch2RegistrationTimeoutMs) {
+        finish_switch2_registration_attempt();
+    }
+}
+
+void __not_in_flash_func(start_switch2_registration_from_switch2_host)()
+{
+    if (!g_debug_usb_mode && !g_switch2_registration_active &&
+        !g_switch2_registration_done) {
         select_switch2_pro_persona();
-        break;
-    case Switch2AutoRegistrationAction::RevertToSwitchProPersona:
-        select_switch_pro_persona();
-        break;
-    case Switch2AutoRegistrationAction::None:
-    default:
-        break;
     }
 }
 
@@ -890,22 +987,23 @@ void __not_in_flash_func(service_switch2_registration)()
 
         uint8_t console_addr[6]{};
         if (procon2_extract_console_addr_wire(request, n, console_addr)) {
+            note_switch2_registration_signal_seen();
             switch2_wake_set_target_from_usb_pairing(console_addr);
-            g_switch2_auto_registration.note_switch_console_seen(board_millis());
         }
 
         uint8_t ctrl_addr_wire[6]{};
         controller_addr_wire(ctrl_addr_wire);
         const Procon2Reply reply =
             procon2_build_reply(request, n, ctrl_addr_wire);
-        if (reply.pairing_finalized) {
-            (void)switch2_wake_mark_registration_complete(ctrl_addr_wire);
-            g_switch2_auto_registration.note_pairing_finalized();
-        }
         if (reply.valid) {
+            note_switch2_registration_signal_seen();
             (void)tud_vendor_write(reply.data.data(),
                                    static_cast<uint32_t>(reply.len));
             (void)tud_vendor_flush();
+        }
+        if (reply.pairing_finalized) {
+            schedule_switch2_registration_finish();
+            return;
         }
     }
 }
@@ -917,13 +1015,19 @@ void __not_in_flash_func(service_usb_reports)()
         return;
     }
 
+    const uint32_t now = board_millis();
     SwitchReport report{};
     if (pop_pending(report)) {
         send_report(report);
         return;
     }
 
-    const uint32_t now = board_millis();
+    if (g_switch2_registration_finish_pending &&
+        static_cast<int32_t>(now - g_switch2_registration_finish_at_ms) >= 0) {
+        finish_switch2_registration_attempt();
+        return;
+    }
+
     if (now - last_input_ms < 8u) {
         return;
     }
@@ -945,7 +1049,7 @@ void __not_in_flash_func(service_usb_reconnect)()
         return;
     }
 
-    if (!bt_controller_connected()) {
+    if (!bt_controller_connected() && !g_switch2_registration_active) {
         g_usb_reconnect_pending = false;
         return;
     }
@@ -969,6 +1073,12 @@ void __not_in_flash_func(service_debug_usb_request)()
     }
 
     g_debug_usb_mode = true;
+    g_switch2_registration_active = false;
+    g_switch2_registration_done = true;
+    g_switch2_registration_finish_pending = false;
+    g_switch2_registration_host_seen = false;
+    g_switch2_registration_signal_seen = false;
+    g_switch2_registration_finish_at_ms = 0;
     g_usb_reconnect_pending = false;
     usb_descriptors_set_controller_persona(UsbControllerPersona::SwitchPro);
     g_usb_persona = UsbAudioPersona::HidOnly;
@@ -1026,7 +1136,7 @@ void __no_inline_not_in_flash_func(app_loop)()
         steam_hog_bt_service(board_millis());
         service_classic_hid_connection();
         service_steam_connection();
-        service_switch2_auto_registration();
+        service_switch2_registration_probe();
         service_switch2_wake_policy();
         dualsense_audio_loop(g_ds_output, g_ds_output_sequence);
         service_dualsense_output();
@@ -1189,18 +1299,15 @@ extern "C" void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id,
         uint8_t console_addr[6]{};
         if (procon2_extract_console_addr_wire(report.data(), size,
                                               console_addr)) {
+            note_switch2_registration_signal_seen();
             switch2_wake_set_target_from_usb_pairing(console_addr);
-            g_switch2_auto_registration.note_switch_console_seen(board_millis());
         }
         uint8_t ctrl_addr_wire[6]{};
         controller_addr_wire(ctrl_addr_wire);
         const Procon2Reply reply =
             procon2_build_reply(report.data(), size, ctrl_addr_wire);
-        if (reply.pairing_finalized) {
-            (void)switch2_wake_mark_registration_complete(ctrl_addr_wire);
-            g_switch2_auto_registration.note_pairing_finalized();
-        }
         if (reply.valid) {
+            note_switch2_registration_signal_seen();
             SwitchReport hid_reply{};
             // HID output reports cap at the 64-byte SwitchReport. The few
             // larger ProCon2 replies (SPI flash reads) only arrive over the
@@ -1211,6 +1318,9 @@ extern "C" void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id,
                       hid_reply.begin());
             push_pending(hid_reply);
         }
+        if (reply.pairing_finalized) {
+            schedule_switch2_registration_finish();
+        }
         return;
     }
 
@@ -1220,7 +1330,7 @@ extern "C" void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id,
     if (result.has_switch2_console_addr) {
         switch2_wake_set_target_from_usb_pairing(
             result.switch2_console_addr_wire);
-        g_switch2_auto_registration.note_switch_console_seen(board_millis());
+        start_switch2_registration_from_switch2_host();
     }
     if (steam_hog_bt_is_connected()) {
         (void)steam_hog_bt_send_switch_feedback(result.feedback);
@@ -1275,6 +1385,7 @@ extern "C" bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage,
     if (request->bmRequestType_bit.direction == TUSB_DIR_IN) {
         if (request->bRequest == 0x03u && request->wValue == 0u &&
             request->wIndex == 0u) {
+            note_switch2_registration_signal_seen();
             // 64-byte device-info block, identical to the genuine ProCon2.
             static const uint8_t kVendorInfo03[64] = {
                 0x01u, 0x00u, 0x48u, 0x45u, 0x4bu, 0x31u, 0x30u, 0x30u,
@@ -1292,6 +1403,7 @@ extern "C" bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage,
         }
         if (request->bRequest == 0x02u && request->wValue == 0u &&
             request->wIndex == 0u) {
+            note_switch2_registration_signal_seen();
             // 16-byte block whose tail carries the controller's own BD_ADDR
             // (same byte order as the 0x15/0x01 bulk business card), so the
             // address the console whitelists is the Pico's real BLE address.
@@ -1309,6 +1421,7 @@ extern "C" bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage,
     // Vendor OUT: the console issues 0x04 (wValue 0x0276) with no data payload.
     if (request->bRequest == 0x04u && request->wValue == 0x0276u &&
         request->wLength == 0u) {
+        note_switch2_registration_signal_seen();
         return tud_control_status(rhport, request);
     }
     return false;

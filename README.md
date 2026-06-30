@@ -43,11 +43,11 @@ After pairing once, the same controller will reconnect when powered on.
 
 ## Nintendo Switch 2 Wake
 
-When you connect the Pico 2 W for the first time, you must connect it with the Switch 2 powered on so the controller gets registered.
+When the Pico 2 W is connected to a powered-on Switch 2, it tries one Switch 2 Pro registration USB handshake regardless of whether a Bluetooth controller is connected.
 
-1. Turn on the Switch 2. Connect the Pico 2 W to the Switch 2, then connect the controller to the Pico 2 W.
-2. Wait until the controller is registered on the Switch 2 and becomes usable.
-3. Put the Switch 2 into sleep mode.
+1. Turn on the Switch 2. Connect the Pico 2 W to the Switch 2.
+2. After the registration handshake finishes, USB disconnects once.
+3. Connect the controller to the Pico 2 W and put the Switch 2 into sleep mode.
 4. After that, press PS/Home/Steam/Guide on the controller to wake the Switch 2.
 
 During wake, the Bluetooth controller connection disconnects once. After the Switch 2 wakes up, press PS/Home/Steam/Guide again to turn the controller back on and reconnect it.
@@ -108,7 +108,7 @@ build\pico2_w\switchbridge.uf2
 
 ## Troubleshooting
 
-- If the controller does not appear on the Switch, make sure the controller is connected to the Pico 2 W. The controller device is not exposed while no Bluetooth controller is connected.
+- If the controller does not appear on the Switch, make sure the controller is connected to the Pico 2 W. While no Bluetooth controller is connected, the controller device is not exposed except for the short Switch 2 Pro registration handshake.
 - To connect a different controller, click BOOTSEL 2 times to disconnect the current controller, then pair the new controller.
 - If automatic reconnection gets stuck, long-press BOOTSEL to delete saved pairings, then pair again.
 - If audio output does not appear while using DualSense, make sure earphones or a headset are plugged into the DualSense 3.5 mm jack.

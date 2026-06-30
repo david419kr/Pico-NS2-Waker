@@ -19,9 +19,6 @@ namespace switchbridge {
 namespace {
 
 constexpr uint32_t kSwitch2WakeTlvTag = 0x5332574bu; // ASCII 'S2WK'
-constexpr uint32_t kSwitch2RegistrationTlvTag = 0x53325247u; // ASCII 'S2RG'
-constexpr uint8_t kSwitch2RegistrationRecordVersion = 1;
-constexpr std::size_t kSwitch2RegistrationRecordSize = 14;
 constexpr uint32_t kAdvertiseDurationMs = 20000;
 constexpr uint32_t kCooldownMs = 30000;
 constexpr uint32_t kControllerFeedbackLeadMs = 200;
@@ -37,15 +34,12 @@ enum class WakeState : uint8_t {
 
 btstack_packet_callback_registration_t g_hci_callback{};
 Switch2WakeConsoleAddrWire g_target_addr_wire{};
-Switch2WakeConsoleAddrWire g_registered_console_addr_wire{};
-Switch2WakeConsoleAddrWire g_registered_controller_addr_wire{};
 Switch2WakeAdvData g_adv_data{};
 WakeState g_state = WakeState::Idle;
 hci_con_handle_t g_le_handle = HCI_CON_HANDLE_INVALID;
 uint32_t g_state_ms = 0;
 uint32_t g_cooldown_until_ms = 0;
 bool g_has_target = false;
-bool g_has_registration = false;
 bool g_advertising = false;
 
 void print_addr_wire(const char *prefix,
@@ -71,45 +65,6 @@ void persist_target()
     std::printf("[S2WK] Persisted wake target rc=%d\n", rc);
 }
 
-bool registration_record_valid(const uint8_t record[kSwitch2RegistrationRecordSize])
-{
-    return record != nullptr &&
-           record[0] == kSwitch2RegistrationRecordVersion &&
-           switch2_wake_addr_valid(&record[1]) &&
-           switch2_wake_addr_valid(&record[7]) &&
-           (record[13] & 0x01u) != 0u;
-}
-
-void load_registration()
-{
-    const btstack_tlv_t *tlv = nullptr;
-    void *tlv_context = nullptr;
-    btstack_tlv_get_instance(&tlv, &tlv_context);
-    if (tlv == nullptr) {
-        g_has_registration = false;
-        return;
-    }
-
-    uint8_t record[kSwitch2RegistrationRecordSize]{};
-    const int len = tlv->get_tag(tlv_context, kSwitch2RegistrationTlvTag,
-                                 record, sizeof(record));
-    if (len != static_cast<int>(sizeof(record)) ||
-        !registration_record_valid(record)) {
-        g_has_registration = false;
-        return;
-    }
-
-    std::memcpy(g_registered_console_addr_wire.data(), &record[1],
-                g_registered_console_addr_wire.size());
-    std::memcpy(g_registered_controller_addr_wire.data(), &record[7],
-                g_registered_controller_addr_wire.size());
-    g_has_registration = true;
-    print_addr_wire("[S2WK] Loaded registered wake console ",
-                    g_registered_console_addr_wire.data());
-    print_addr_wire("[S2WK] Loaded registered controller ",
-                    g_registered_controller_addr_wire.data());
-}
-
 void load_target()
 {
     const btstack_tlv_t *tlv = nullptr;
@@ -132,7 +87,6 @@ void load_target()
     g_target_addr_wire = loaded;
     g_has_target = true;
     print_addr_wire("[S2WK] Loaded wake target ", g_target_addr_wire.data());
-    load_registration();
 }
 
 void start_advertising()
@@ -278,78 +232,6 @@ void switch2_wake_set_target_from_usb_pairing(const uint8_t addr_wire[6])
 bool switch2_wake_has_target()
 {
     return g_has_target && switch2_wake_addr_valid(g_target_addr_wire.data());
-}
-
-bool switch2_wake_registration_complete(const uint8_t controller_addr_wire[6])
-{
-    if (controller_addr_wire == nullptr || !switch2_wake_has_target() ||
-        !g_has_registration ||
-        !switch2_wake_addr_valid(controller_addr_wire)) {
-        return false;
-    }
-    return std::memcmp(g_registered_console_addr_wire.data(),
-                       g_target_addr_wire.data(),
-                       g_target_addr_wire.size()) == 0 &&
-           std::memcmp(g_registered_controller_addr_wire.data(),
-                       controller_addr_wire,
-                       g_registered_controller_addr_wire.size()) == 0;
-}
-
-bool switch2_wake_mark_registration_complete(
-    const uint8_t controller_addr_wire[6])
-{
-    if (controller_addr_wire == nullptr || !switch2_wake_has_target() ||
-        !switch2_wake_addr_valid(controller_addr_wire)) {
-        return false;
-    }
-
-    uint8_t record[kSwitch2RegistrationRecordSize]{};
-    record[0] = kSwitch2RegistrationRecordVersion;
-    std::memcpy(&record[1], g_target_addr_wire.data(),
-                g_target_addr_wire.size());
-    std::memcpy(&record[7], controller_addr_wire,
-                g_registered_controller_addr_wire.size());
-    record[13] = 0x01u;
-
-    const btstack_tlv_t *tlv = nullptr;
-    void *tlv_context = nullptr;
-    btstack_tlv_get_instance(&tlv, &tlv_context);
-    if (tlv == nullptr) {
-        std::printf("[S2WK] No TLV instance for registration persistence\n");
-        return false;
-    }
-
-    const int rc = tlv->store_tag(tlv_context, kSwitch2RegistrationTlvTag,
-                                  record, sizeof(record));
-    std::printf("[S2WK] Persisted registration rc=%d\n", rc);
-    if (rc < 0) {
-        return false;
-    }
-
-    std::memcpy(g_registered_console_addr_wire.data(), &record[1],
-                g_registered_console_addr_wire.size());
-    std::memcpy(g_registered_controller_addr_wire.data(), &record[7],
-                g_registered_controller_addr_wire.size());
-    g_has_registration = true;
-    return true;
-}
-
-void switch2_wake_clear_registration_complete()
-{
-    g_has_registration = false;
-    g_registered_console_addr_wire = {};
-    g_registered_controller_addr_wire = {};
-
-    const btstack_tlv_t *tlv = nullptr;
-    void *tlv_context = nullptr;
-    btstack_tlv_get_instance(&tlv, &tlv_context);
-    if (tlv == nullptr) {
-        return;
-    }
-
-    uint8_t record[kSwitch2RegistrationRecordSize]{};
-    (void)tlv->store_tag(tlv_context, kSwitch2RegistrationTlvTag,
-                         record, sizeof(record));
 }
 
 bool switch2_wake_request()
