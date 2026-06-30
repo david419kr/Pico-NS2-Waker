@@ -2,7 +2,7 @@
 
 # "Wake Switch 2 with Any Modern Controllers" Dongle
 
-Firmware for using a DualSense, DualShock 4, Nintendo Switch Pro Controller 1, Steam Controller, or Xbox Bluetooth controller on Nintendo Switch 1/2 with a Raspberry Pi Pico 2 W.  
+Firmware for using a DualSense, DualShock 4, Nintendo Switch Pro Controller 1/2, Steam Controller, or Xbox Bluetooth controller on Nintendo Switch 1/2 with a Raspberry Pi Pico 2 W.  
 Any supported controller can wake a Nintendo Switch 2 from sleep. (※Switch 1 wake is not supported.)
 
 Credits:  
@@ -15,6 +15,7 @@ This project is heavily inspired by [awalol/DS5Dongle](https://github.com/awalol
 - Can wake a Nintendo Switch 2 from sleep.
 - Supports motion controls and rumble. Xbox controllers do not support motion controls.
 - Lets you use the DualSense 3.5 mm jack on Switch 1/2. You can also use the DualSense microphone on Switch 2.
+- Lets you use a Switch 2 Pro Controller wirelessly on Switch 1 or PC. It appears as a Pro Controller 1.
 
 ## Requirements
 
@@ -56,11 +57,11 @@ Switch 1 wake is not supported.
 
 | Controller | Behavior |
 | --- | --- |
-| DualSense | Touchpad click is recognized as the screenshot Capture button. |
-| DualShock 4 | Touchpad click is recognized as the screenshot Capture button. |
-| Steam Controller | Left touchpad is recognized as D-pad, right touchpad as right stick, and the QAM (...) button as screenshot Capture. |
-| Steam Controller | To remap L4/R4/L5/R5, hold the center click of the left touchpad, press the back button to remap, then press the button to assign. |
+| DualSense / DS4 | Touchpad click is recognized as the screenshot Capture button. |
 | Xbox Controller | Pressing Back/View + Menu together is recognized as screenshot Capture. |
+| Steam Controller | Left touchpad is recognized as an 8-way D-pad, right touchpad as right stick, and the QAM (...) button as screenshot Capture. |
+| Steam Controller | To remap L4/R4/L5/R5, hold the exact center click of the left touchpad, press the back button to remap, then press the button to assign. |
+| Switch 2 Pro Controller | To remap GL/GR, hold the C button, press the back button to remap, then press the button to assign. |
 
 ## Audio
 
@@ -119,22 +120,12 @@ In normal use, no manual setup is required. If the Switch 2 still does not wake 
 
 | Controller | Action |
 | --- | --- |
-| DualSense | Hold PS, click the touchpad twice, then release PS |
-| DualShock 4 | Hold PS, click the touchpad twice, then release PS |
-| Switch Pro Controller 1 | Hold Home, press Capture twice, then release Home |
-| Steam Controller | Hold Steam, press the QAM (...) button twice, then release Steam |
-| Xbox Controller | Hold Xbox, press Back/View twice, then release Xbox |
+| DualSense / DS4 | Hold PS and click the touchpad twice. |
+| Switch Pro Controller 1/2 | Hold Home and press Capture twice. |
+| Steam Controller | Hold Steam and press the QAM (...) button twice. |
+| Xbox Controller | Hold Xbox and press Back/View twice. |
 
-3. It reconnects as a `Switch 2 Pro Controller`. Wait until the Switch 2 recognizes it once.
-4. Return to normal mode.
+3. It briefly reconnects as a `Switch 2 Pro Controller`, then automatically returns to normal mode after the Switch 2 recognizes this controller.
 
-| Controller | Action |
-| --- | --- |
-| DualSense | Hold PS, click the touchpad once, then release PS |
-| DualShock 4 | Hold PS, click the touchpad once, then release PS |
-| Switch Pro Controller 1 | Hold Home, press Capture once, then release Home |
-| Steam Controller | Hold Steam, press the QAM (...) button once, then release Steam |
-| Xbox Controller | Hold Xbox, press Back/View once, then release Xbox |
-
-5. Put the Switch 2 into sleep mode.
-6. Press PS/Home/Steam/Xbox on the controller to wake the Switch 2.
+4. Put the Switch 2 into sleep mode.
+5. Press PS/Home/Steam/Xbox on the controller to wake the Switch 2.

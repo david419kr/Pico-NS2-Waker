@@ -1,6 +1,6 @@
 # "아무 컨트롤러로 스위치2를 깨우기" 동글
 
-Raspberry Pi Pico 2 W를 이용해 DualSense, DualShock 4, Nintendo Switch Pro Controller 1, Steam Controller, Xbox Bluetooth 컨트롤러를 Nintendo Switch 1/2에서 사용 가능하게 하는 펌웨어입니다.  
+Raspberry Pi Pico 2 W를 이용해 DualSense, DualShock 4, Nintendo Switch Pro Controller 1/2, Steam Controller, Xbox Bluetooth 컨트롤러를 Nintendo Switch 1/2에서 사용 가능하게 하는 펌웨어입니다.  
 어떤 컨트롤러를 사용해도 Switch 2 슬립모드를 깨울 수 있습니다. (※Switch 1 깨우기는 지원하지 않습니다.)
 
 Credits:  
@@ -13,6 +13,7 @@ Credits:
 - Nintendo Switch 2를 슬립 상태에서 깨울 수 있습니다.
 - 모션 컨트롤과 진동을 지원합니다. 단, Xbox 컨트롤러는 모션 컨트롤을 지원하지 않습니다.
 - 스위치 1/2에서 DualSense의 3.5 mm 단자를 이용 가능합니다. 스위치 2에서는 DualSense의 마이크도 이용 가능합니다.
+- 스위치 1 혹은 PC에서 무선으로 프로콘 2를 사용할 수 있습니다.(프로콘 1로 인식됩니다.)
 
 ## 준비물
 
@@ -54,11 +55,11 @@ Switch 1 깨우기는 지원하지 않습니다.
 
 | 컨트롤러 | 조작 |
 | --- | --- |
-| DualSense | 터치패드 클릭은 "스크린샷 캡쳐" 버튼으로 인식됩니다. |
-| DualShock 4 | 터치패드 클릭은 "스크린샷 캡쳐" 버튼으로 인식됩니다. |
-| Steam Controller | 좌 터치패드는 D-pad, 우 터치패드는 우 스틱, QAM(・・・) 버튼은 스크린샷 캡쳐로 인식됩니다. |
-| Steam Controller | 백버튼(L4/R4/L5/R5)은 좌 터치패드 중앙 클릭을 누른 상태에서 대상 백버튼을 누르고, 이어서 할당할 버튼을 누르면 리매핑됩니다. |
+| DualSense / DS4 | 터치패드 클릭은 "스크린샷 캡쳐" 버튼으로 인식됩니다. |
 | Xbox Controller | Back/View + Menu를 동시에 누르면 "스크린샷 캡쳐" 버튼으로 인식됩니다. |
+| Steam Controller | 좌 터치패드는 8방향 D-pad, 우 터치패드는 우 스틱, QAM(・・・) 버튼은 스크린샷 캡쳐로 인식됩니다. |
+| Steam Controller | 좌 터치패드의 정중앙을 클릭 한 상태에서 백버튼(L4/R4/L5/R5)을 누르고, 이어서 할당할 버튼을 누르면 리매핑 됩니다. |
+| Switch 2 Pro Controller | C 버튼을 누른 상태에서 백버튼(GL/GR)을 누르고, 이어서 할당할 버튼을 누르면 리매핑 됩니다. |
 
 ## 오디오
 
@@ -117,22 +118,12 @@ build\pico2_w\switchbridge.uf2
 
 | 컨트롤러 | 조작 |
 | --- | --- |
-| DualSense | PS 버튼을 누른 상태에서 터치패드를 2번 클릭한 뒤 PS 버튼을 놓습니다 |
-| DualShock 4 | PS 버튼을 누른 상태에서 터치패드를 2번 클릭한 뒤 PS 버튼을 놓습니다 |
-| Switch Pro Controller 1 | Home 버튼을 누른 상태에서 Capture 버튼을 2번 누른 뒤 Home 버튼을 놓습니다 |
-| Steam Controller | Steam 버튼을 누른 상태에서 QAM(・・・) 버튼을 2번 누른 뒤 Steam 버튼을 놓습니다 |
-| Xbox Controller | Xbox 버튼을 누른 상태에서 Back/View 버튼을 2번 누른 뒤 Xbox 버튼을 놓습니다 |
+| DualSense / DS4 | PS 버튼을 누른 상태에서 터치패드를 2번 클릭합니다. |
+| Switch Pro Controller 1/2 | Home 버튼을 누른 상태에서 Capture 버튼을 2번 누릅니다. |
+| Steam Controller | Steam 버튼을 누른 상태에서 QAM(・・・) 버튼을 2번 누릅니다. |
+| Xbox Controller | Xbox 버튼을 누른 상태에서 Back/View 버튼을 2번 누릅니다. |
 
-3. `Switch 2 Pro Controller`로 다시 연결됩니다. Switch 2가 이 컨트롤러를 한 번 인식할 때까지 기다립니다.
-4. 일반 모드로 돌아옵니다.
+3. `Switch 2 Pro Controller`로 잠시 연결된 후, Switch 2가 이 컨트롤러를 인식한 뒤 자동으로 일반 모드로 복귀합니다.
 
-| 컨트롤러 | 조작 |
-| --- | --- |
-| DualSense | PS 버튼을 누른 상태에서 터치패드를 1번 클릭한 뒤 PS 버튼을 놓습니다 |
-| DualShock 4 | PS 버튼을 누른 상태에서 터치패드를 1번 클릭한 뒤 PS 버튼을 놓습니다 |
-| Switch Pro Controller 1 | Home 버튼을 누른 상태에서 Capture 버튼을 1번 누른 뒤 Home 버튼을 놓습니다 |
-| Steam Controller | Steam 버튼을 누른 상태에서 QAM(・・・) 버튼을 1번 누른 뒤 Steam 버튼을 놓습니다 |
-| Xbox Controller | Xbox 버튼을 누른 상태에서 Back/View 버튼을 1번 누른 뒤 Xbox 버튼을 놓습니다 |
-
-5. Switch 2를 슬립 모드로 둡니다.
-6. 컨트롤러의 PS/Home/Steam/Xbox 버튼을 눌러 Switch 2를 깨웁니다.
+4. Switch 2를 슬립 모드로 둡니다.
+5. 컨트롤러의 PS/Home/Steam/Xbox 버튼을 눌러 Switch 2를 깨웁니다.
