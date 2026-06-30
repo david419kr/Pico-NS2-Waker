@@ -427,8 +427,26 @@ void start_pairing()
     uint8_t payload[14]{};
     payload[0] = 0x00;
     payload[1] = 0x02;
-    std::memcpy(&payload[2], local, sizeof(local));
-    std::memcpy(&payload[8], local, sizeof(local));
+    // Nintendo Switch 2 pairing command 0x15/0x01 commits the host address the
+    // controller later uses to filter reconnect CONNECT_IND packets. Two wire
+    // rules apply (matches WaveBird NS2PairingFrames.exchangeAddresses /
+    // NS2Pairing.secondaryAddress):
+    //   1. addresses are byte-reversed vs bd_addr_t natural order so they line
+    //      up with the little-endian InitA the radio puts on air;
+    //   2. the console always sends a secondary address equal to the primary
+    //      with its least-significant byte decremented by one.
+    // The old code copied bd_addr_t verbatim, so the controller stored the host
+    // address reversed and rejected every reconnect CONNECT_IND (peripheral
+    // stayed silent, central retried LL_VERSION_IND then dropped the link).
+    bd_addr_t secondary_natural{};
+    std::memcpy(secondary_natural, local, sizeof(secondary_natural));
+    secondary_natural[5] = static_cast<uint8_t>(secondary_natural[5] - 1u);
+    uint8_t primary_wire[6]{};
+    uint8_t secondary_wire[6]{};
+    reverse_bd_addr(local, primary_wire);
+    reverse_bd_addr(secondary_natural, secondary_wire);
+    std::memcpy(&payload[2], primary_wire, sizeof(primary_wire));
+    std::memcpy(&payload[8], secondary_wire, sizeof(secondary_wire));
     send_command(0x15, 0x01, payload, sizeof(payload));
 }
 
