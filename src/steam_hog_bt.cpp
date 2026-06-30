@@ -1,5 +1,6 @@
 #include "switch_bridge/steam_hog_bt.h"
 
+#include "switch_bridge/procon2_ble.h"
 #include "switch_bridge/steam_controller.h"
 #include "switch_bridge/xbox_controller.h"
 
@@ -886,7 +887,10 @@ void hci_packet_handler(uint8_t packet_type, uint16_t channel,
 
     case GAP_EVENT_ADVERTISING_REPORT:
         if (g_state == SteamHogState::Scanning) {
-            if (adv_is_xbox_controller(packet)) {
+            if (procon2_ble_handle_advertising_report(packet)) {
+                clear_runtime_state(false);
+                g_scan_suppressed = true;
+            } else if (adv_is_xbox_controller(packet)) {
                 connect_to_advertiser(packet,
                                       SteamHogBtControllerKind::Xbox);
             } else if (adv_is_steam_controller(packet)) {

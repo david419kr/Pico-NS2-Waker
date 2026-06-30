@@ -36,6 +36,7 @@ add_library(switchbridge_core
     src/mapper.cpp
     src/persona_combo_filter.cpp
     src/procon2_handshake.cpp
+    src/procon2_report.cpp
     src/steam_controller.cpp
     src/switch2_wake.cpp
     src/switch_identity.cpp
@@ -64,6 +65,7 @@ add_executable(switchbridge
     src/dualsense_audio.cpp
     src/classic_hid_bt.cpp
     src/main.cpp
+    src/procon2_ble.cpp
     src/ram_mem.c
     src/steam_hog_bt.cpp
     src/switch2_wake_runtime.cpp

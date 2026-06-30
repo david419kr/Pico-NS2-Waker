@@ -6,6 +6,7 @@
 #include "switch_bridge/mapper.h"
 #include "switch_bridge/persona_combo_filter.h"
 #include "switch_bridge/procon2_handshake.h"
+#include "switch_bridge/procon2_report.h"
 #include "switch_bridge/steam_controller.h"
 #include "switch_bridge/switch_identity.h"
 #include "switch_bridge/switch_pro.h"
@@ -257,6 +258,138 @@ void write_u32_le(uint8_t *p, uint32_t value)
     p[1] = static_cast<uint8_t>(value >> 8u);
     p[2] = static_cast<uint8_t>(value >> 16u);
     p[3] = static_cast<uint8_t>(value >> 24u);
+}
+
+void test_procon2_manufacturer_data_parser()
+{
+    uint8_t mfg[18] = {
+        0x53, 0x05, 0x00, 0x00, 0x00,
+        0x7e, 0x05, 0x69, 0x20,
+        0x00, 0x00, 0x00,
+        0, 0, 0, 0, 0, 0,
+    };
+    Procon2Advertisement adv{};
+    assert(parse_procon2_manufacturer_data(mfg, sizeof(mfg), adv));
+    assert(adv.valid);
+    assert(adv.vendor_id == kNintendoVendorId);
+    assert(adv.product_id == kProcon2ProductId);
+    assert(adv.needs_pair);
+
+    const uint8_t reconnect[] = {0x98, 0xb6, 0xe9, 0xe6, 0xdc, 0x73};
+    std::memcpy(&mfg[12], reconnect, sizeof(reconnect));
+    assert(parse_procon2_manufacturer_data(mfg, sizeof(mfg), adv));
+    assert(!adv.needs_pair);
+    assert(std::memcmp(adv.reconnect_mac.data(), reconnect,
+                       sizeof(reconnect)) == 0);
+
+    mfg[7] = 0x99;
+    mfg[8] = 0x99;
+    assert(!parse_procon2_manufacturer_data(mfg, sizeof(mfg), adv));
+}
+
+void test_procon2_report05_parser()
+{
+    std::array<uint8_t, 63> report{};
+    report[0] = kProcon2InputReport05;
+    const uint32_t buttons =
+        (1u << 0) | (1u << 1) | (1u << 2) | (1u << 3) |
+        (1u << 6) | (1u << 7) | (1u << 8) | (1u << 9) |
+        (1u << 10) | (1u << 11) | (1u << 12) | (1u << 13) |
+        (1u << 16) | (1u << 17) | (1u << 18) | (1u << 19) |
+        (1u << 22) | (1u << 23);
+    write_u32_le(&report[4], buttons);
+    pack_switch_stick12(&report[10], 0x123, 0x456);
+    pack_switch_stick12(&report[13], 0x789, 0xabc);
+
+    write_i16_le(&report[48], 100);
+    write_i16_le(&report[50], -200);
+    write_i16_le(&report[52], 300);
+    write_i16_le(&report[54], -400);
+    write_i16_le(&report[56], 500);
+    write_i16_le(&report[58], -600);
+
+    SwitchProState state{};
+    Procon2Calibration cal{};
+    assert(parse_procon2_report05(report.data(), report.size(), cal, state));
+    assert((state.buttons & kNsY) != 0);
+    assert((state.buttons & kNsX) != 0);
+    assert((state.buttons & kNsB) != 0);
+    assert((state.buttons & kNsA) != 0);
+    assert((state.buttons & kNsL) != 0);
+    assert((state.buttons & kNsR) != 0);
+    assert((state.buttons & kNsZL) != 0);
+    assert((state.buttons & kNsZR) != 0);
+    assert((state.buttons & kNsMinus) != 0);
+    assert((state.buttons & kNsPlus) != 0);
+    assert((state.buttons & kNsLeftStick) != 0);
+    assert((state.buttons & kNsRightStick) != 0);
+    assert((state.buttons & kNsHome) != 0);
+    assert((state.buttons & kNsCapture) != 0);
+    assert((state.buttons & kNsUp) != 0);
+    assert((state.buttons & kNsDown) != 0);
+    assert((state.buttons & kNsLeft) != 0);
+    assert((state.buttons & kNsRight) != 0);
+    assert(state.left_x == 0x123);
+    assert(state.left_y == 0x456);
+    assert(state.right_x == 0x789);
+    assert(state.right_y == 0xabc);
+    assert(state.has_imu);
+    assert(state.accel_x == -200);
+    assert(state.accel_y == -100);
+    assert(state.accel_z == 300);
+    assert(state.gyro_x == 500);
+    assert(state.gyro_y == 400);
+    assert(state.gyro_z == 600);
+}
+
+void test_procon2_report05_calibration()
+{
+    std::array<uint8_t, 63> report{};
+    report[0] = kProcon2InputReport05;
+    pack_switch_stick12(&report[10], 0x0c00, 0x0c00);
+    pack_switch_stick12(&report[13], 0x0800, 0x0800);
+
+    Procon2Calibration cal{};
+    cal.left.x.neutral = 0x0800;
+    cal.left.x.max_above = 0x0400;
+    cal.left.x.max_below = 0x0400;
+    cal.left.y.neutral = 0x0800;
+    cal.left.y.max_above = 0x0400;
+    cal.left.y.max_below = 0x0400;
+
+    SwitchProState state{};
+    assert(parse_procon2_report05(report.data(), report.size(), cal, state));
+    assert(state.left_x == 0x0fff);
+    assert(state.left_y == 0x0fff);
+    assert(state.right_x == 0x0800);
+    assert(state.right_y == 0x0800);
+}
+
+void test_procon2_vibration_encoders()
+{
+    const SwitchRumblePacket silent{0x00, 0x01, 0x40, 0x40};
+    const SwitchRumblePacket impact{0x34, 0xf0, 0x62, 0xe0};
+
+    std::array<uint8_t, kProcon2Vibration42Size> wavebird{};
+    std::size_t len = build_procon2_vibration42(
+        impact, silent, 0x0a, wavebird.data(), wavebird.size());
+    assert(len == kProcon2Vibration42Size);
+    assert(wavebird[0] == 0x00);
+    assert(wavebird[1] == 0x5a);
+    assert((wavebird[5] & 0x80u) != 0u);
+    assert(wavebird[17] == 0x1a);
+    assert((wavebird[21] & 0x80u) == 0u);
+
+    std::array<uint8_t, kProcon2Vibration33Size> ogx{};
+    len = build_procon2_vibration33(
+        impact, silent, 0x03, ogx.data(), ogx.size());
+    assert(len == kProcon2Vibration33Size);
+    assert(ogx[0] == 0x00);
+    assert(ogx[1] == 0x53);   // right block, Bluepad32/OGX order
+    assert(ogx[17] == 0x53);  // left block
+    assert(std::memcmp(&ogx[2], &ogx[7], 5) == 0);
+    assert(std::memcmp(&ogx[18], &ogx[23], 5) == 0);
+    assert(std::memcmp(&ogx[18], &ogx[2], 5) != 0);
 }
 
 void test_steam_controller_input_parser_and_mapping()
@@ -1662,6 +1795,10 @@ int main()
     test_axis_and_motion_mapping();
     test_nrf5340_steam_motion_axis_parity();
     test_haptics();
+    test_procon2_manufacturer_data_parser();
+    test_procon2_report05_parser();
+    test_procon2_report05_calibration();
+    test_procon2_vibration_encoders();
     test_steam_controller_input_parser_and_mapping();
     test_steam_back_assignment_and_mapping();
     test_steam_persona_combo_filter();

@@ -38,6 +38,7 @@ $Exe = Join-Path $OutDir 'host_mapping_test.exe'
     (Join-Path $RepoRoot 'src\mapper.cpp') `
     (Join-Path $RepoRoot 'src\persona_combo_filter.cpp') `
     (Join-Path $RepoRoot 'src\procon2_handshake.cpp') `
+    (Join-Path $RepoRoot 'src\procon2_report.cpp') `
     (Join-Path $RepoRoot 'src\steam_controller.cpp') `
     (Join-Path $RepoRoot 'src\switch2_wake.cpp') `
     (Join-Path $RepoRoot 'src\switch_identity.cpp') `

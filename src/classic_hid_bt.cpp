@@ -4,6 +4,7 @@
 #include "switch_bridge/dualshock4_output.h"
 #include "switch_bridge/dualshock4_report.h"
 #include "switch_bridge/dualsense_report.h"
+#include "switch_bridge/procon2_ble.h"
 #include "switch_bridge/steam_hog_bt.h"
 #include "switch_bridge/switch_identity.h"
 #include "switch_bridge/switch_usb.h"
@@ -1214,6 +1215,7 @@ bool classic_hid_init()
 
     l2cap_init();
     steam_hog_bt_stack_init();
+    procon2_ble_stack_init();
     sdp_init();
     sdp_client_init();
     l2cap_register_service(l2cap_packet_handler, PSM_HID_CONTROL, kMtuControl,

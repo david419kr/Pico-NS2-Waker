@@ -9,6 +9,7 @@
 #include "switch_bridge/classic_hid_bt.h"
 #include "switch_bridge/dualsense_output.h"
 #include "switch_bridge/dualsense_report.h"
+#include "switch_bridge/procon2_ble.h"
 #include "switch_bridge/procon2_handshake.h"
 #include "switch_bridge/persona_combo_filter.h"
 #include "switch_bridge/steam_controller.h"
@@ -324,7 +325,8 @@ bool bt_controller_is_xbox()
 
 bool bt_controller_connected()
 {
-    return classic_hid_is_connected() || steam_hog_bt_is_connected();
+    return classic_hid_is_connected() || steam_hog_bt_is_connected() ||
+           procon2_ble_is_ready();
 }
 
 bool steam_hog_controller_is_xbox()
@@ -690,6 +692,32 @@ void __not_in_flash_func(on_steam_hog_bt_data)(SteamHogBtControllerKind kind,
     g_switch_usb.set_state(map_steam_to_switch(input, g_steam_back_mappings));
 }
 
+void __not_in_flash_func(on_procon2_ble_data)(const SwitchProState &input_state)
+{
+    SwitchProState state = input_state;
+    const uint32_t now = board_millis();
+    const PersonaComboFilterResult combo =
+        g_persona_combo_filter.process(state.buttons, kNsHome, kNsCapture,
+                                       now);
+    state.buttons = combo.buttons;
+    if (combo.request == PersonaComboRequest::SwitchPro) {
+        select_switch_pro_persona();
+    } else if (combo.request == PersonaComboRequest::Switch2Pro) {
+        select_switch2_pro_persona();
+    }
+
+    const bool home_down = (state.buttons & kNsHome) != 0;
+    const bool home_edge = home_down && (g_last_ns_buttons & kNsHome) == 0;
+    g_last_ns_buttons = state.buttons;
+    if (home_edge) {
+        g_home_wake_pending = true;
+        g_home_wake_pending_ms = now;
+    }
+
+    g_procon_passthrough_valid = false;
+    g_switch_usb.set_state(state);
+}
+
 void __not_in_flash_func(apply_switch_feedback)(
     const SwitchUsbFeedback &feedback)
 {
@@ -731,7 +759,7 @@ void __not_in_flash_func(service_classic_hid_connection)()
     static BtControllerKind last_kind = BtControllerKind::Unknown;
     const bool connected = classic_hid_is_connected();
     const BtControllerKind kind = classic_hid_controller_kind();
-    steam_hog_bt_set_scan_suppressed(connected);
+    steam_hog_bt_set_scan_suppressed(connected || procon2_ble_is_active());
     if (connected == was_connected && kind == last_kind) {
         return;
     }
@@ -760,7 +788,7 @@ void __not_in_flash_func(service_classic_hid_connection)()
         g_xbox_input = {};
         g_procon_passthrough_valid = false;
         g_persona_combo_filter.reset();
-        if (steam_hog_bt_is_connected()) {
+        if (steam_hog_bt_is_connected() || procon2_ble_is_ready()) {
             return;
         }
         g_auto_wake_armed = false;
@@ -840,7 +868,7 @@ void __not_in_flash_func(service_steam_connection)()
         g_xbox_input = {};
         g_steam_trackpad_haptics = {};
         reset_steam_back_assignment_runtime();
-        if (classic_hid_is_connected()) {
+        if (classic_hid_is_connected() || procon2_ble_is_ready()) {
             return;
         }
         g_auto_wake_armed = false;
@@ -873,6 +901,48 @@ void __not_in_flash_func(service_steam_connection)()
     if (became_identified) {
         controller_feedback_play(ControllerFeedbackCue::Connected);
     }
+}
+
+void __not_in_flash_func(service_procon2_ble_connection)()
+{
+    static bool was_ready = false;
+    const bool ready = procon2_ble_is_ready();
+    if (ready == was_ready) {
+        return;
+    }
+    was_ready = ready;
+
+    if (!ready) {
+        g_last_ns_buttons = 0;
+        g_procon_passthrough_valid = false;
+        if (classic_hid_is_connected() || steam_hog_bt_is_connected()) {
+            return;
+        }
+        g_auto_wake_armed = false;
+        g_usb_reconnect_pending = false;
+        g_persona_combo_filter.reset();
+        usb_descriptors_set_controller_persona(UsbControllerPersona::SwitchPro);
+        g_usb_persona = UsbAudioPersona::HidOnly;
+        usb_descriptors_set_audio_persona(g_usb_persona);
+        if (!g_debug_usb_mode) {
+            tud_disconnect();
+        }
+
+        SwitchProState neutral{};
+        neutral.has_imu = true;
+        g_switch_usb.set_state(neutral);
+        return;
+    }
+
+    g_debug_usb_mode = false;
+    g_auto_wake_armed = true;
+    g_controller_connected_since_ms = board_millis();
+    g_procon_passthrough_valid = false;
+    usb_descriptors_set_controller_persona(UsbControllerPersona::SwitchPro);
+    g_usb_persona = UsbAudioPersona::HidOnly;
+    usb_descriptors_set_audio_persona(g_usb_persona);
+    request_usb_reconnect();
+    controller_feedback_play(ControllerFeedbackCue::Connected);
 }
 
 void __not_in_flash_func(service_usb_mount_tracking)()
@@ -1239,9 +1309,11 @@ void __no_inline_not_in_flash_func(app_loop)()
         cyw43_arch_poll();
         tud_task();
         service_usb_mount_tracking();
+        procon2_ble_service(board_millis());
         steam_hog_bt_service(board_millis());
         service_classic_hid_connection();
         service_steam_connection();
+        service_procon2_ble_connection();
         service_switch2_registration_probe();
         service_switch2_wake_policy();
         dualsense_audio_loop(g_ds_output, g_ds_output_sequence);
@@ -1286,6 +1358,7 @@ int main()
     switch2_wake_init();
     classic_hid_register_data_callback(on_classic_hid_data);
     steam_hog_bt_register_data_callback(on_steam_hog_bt_data);
+    procon2_ble_register_data_callback(on_procon2_ble_data);
 
     PlayStationInput neutral{};
     neutral.has_imu = true;
@@ -1439,7 +1512,9 @@ extern "C" void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id,
             result.switch2_console_addr_wire);
         start_switch2_registration_from_switch2_host();
     }
-    if (steam_hog_bt_is_connected()) {
+    if (procon2_ble_is_ready()) {
+        (void)procon2_ble_send_switch_feedback(result.feedback);
+    } else if (steam_hog_bt_is_connected()) {
         (void)steam_hog_bt_send_switch_feedback(result.feedback);
     } else if (!bt_controller_is_switch_pro()) {
         apply_switch_feedback(result.feedback);
