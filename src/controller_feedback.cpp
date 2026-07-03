@@ -5,7 +5,7 @@
 #include "switch_bridge/classic_hid_bt.h"
 #include "switch_bridge/dualsense_output.h"
 #include "switch_bridge/procon2_ble.h"
-#include "switch_bridge/steam_hog_bt.h"
+#include "switch_bridge/ble_controller_hub.h"
 #include "switch_bridge/switch_usb.h"
 #include "switch_bridge/xbox_controller.h"
 
@@ -156,10 +156,10 @@ bool send_classic_feedback(ControllerFeedbackCue cue,
 
 bool send_hogp_feedback(ControllerFeedbackCue cue, const HapticCommand &command)
 {
-    if (!steam_hog_bt_is_connected()) {
+    if (!ble_controller_hub_is_connected()) {
         return false;
     }
-    return steam_hog_bt_send_switch_feedback(
+    return ble_controller_hub_send_switch_feedback(
         switch_feedback_for_haptics(cue, command));
 }
 

@@ -14,7 +14,8 @@
 #include "switch_bridge/procon2_report.h"
 #include "switch_bridge/persona_combo_filter.h"
 #include "switch_bridge/steam_controller.h"
-#include "switch_bridge/steam_hog_bt.h"
+#include "switch_bridge/ble_controller_hub.h"
+#include "switch_bridge/steam_controller_ble.h"
 #include "switch_bridge/switch_identity.h"
 #include "switch_bridge/switch_pro.h"
 #include "switch_bridge/switch_usb.h"
@@ -335,13 +336,8 @@ bool bt_controller_is_xbox()
 
 bool bt_controller_connected()
 {
-    return classic_hid_is_connected() || steam_hog_bt_is_connected() ||
+    return classic_hid_is_connected() || ble_controller_hub_is_connected() ||
            procon2_ble_is_ready();
-}
-
-bool steam_hog_controller_is_xbox()
-{
-    return steam_hog_bt_controller_kind() == SteamHogBtControllerKind::Xbox;
 }
 
 void finish_switch2_registration_attempt()
@@ -713,11 +709,11 @@ void __not_in_flash_func(on_classic_hid_data)(ClassicHidChannel channel,
     g_switch_usb.set_state(map_playstation_to_switch(input));
 }
 
-void __not_in_flash_func(on_steam_hog_bt_data)(SteamHogBtControllerKind kind,
+void __not_in_flash_func(on_ble_controller_data)(BleControllerKind kind,
                                                const uint8_t *data,
                                                std::size_t size)
 {
-    if (kind == SteamHogBtControllerKind::Xbox) {
+    if (kind == BleControllerKind::Xbox) {
         if (!parse_xbox_bt_report(data, size, g_xbox_input)) {
             return;
         }
@@ -746,7 +742,7 @@ void __not_in_flash_func(on_steam_hog_bt_data)(SteamHogBtControllerKind kind,
     if (power_off_combo_down &&
         (g_last_steam_buttons & kSteamPowerOffCombo) !=
             kSteamPowerOffCombo) {
-        (void)steam_hog_bt_power_off();
+        (void)steam_controller_ble_power_off();
     }
 
     load_steam_back_mappings();
@@ -761,7 +757,7 @@ void __not_in_flash_func(on_steam_hog_bt_data)(SteamHogBtControllerKind kind,
         mark_steam_back_mappings_dirty();
     }
     if (assignment.assignment_started) {
-        steam_hog_bt_pulse_trackpad_haptic(true, true);
+        steam_controller_ble_pulse_trackpad_haptic(true, true);
     }
     if (assignment.consumed) {
         g_last_steam_buttons = input.buttons;
@@ -785,14 +781,14 @@ void __not_in_flash_func(on_steam_hog_bt_data)(SteamHogBtControllerKind kind,
     const SteamTrackpadHapticAction haptic_action =
         update_steam_trackpad_haptics(input, g_steam_trackpad_haptics, now);
     if (haptic_action.left_click) {
-        steam_hog_bt_pulse_trackpad_haptic(true, true);
+        steam_controller_ble_pulse_trackpad_haptic(true, true);
     } else if (haptic_action.left_tick) {
-        steam_hog_bt_pulse_trackpad_haptic(true, false);
+        steam_controller_ble_pulse_trackpad_haptic(true, false);
     }
     if (haptic_action.right_click) {
-        steam_hog_bt_pulse_trackpad_haptic(false, true);
+        steam_controller_ble_pulse_trackpad_haptic(false, true);
     } else if (haptic_action.right_tick) {
-        steam_hog_bt_pulse_trackpad_haptic(false, false);
+        steam_controller_ble_pulse_trackpad_haptic(false, false);
     }
 
     g_procon_passthrough_valid = false;
@@ -894,7 +890,7 @@ void __not_in_flash_func(service_classic_hid_connection)()
     static BtControllerKind last_kind = BtControllerKind::Unknown;
     const bool connected = classic_hid_is_connected();
     const BtControllerKind kind = classic_hid_controller_kind();
-    steam_hog_bt_set_scan_suppressed(connected || procon2_ble_is_active());
+    ble_controller_hub_set_scan_suppressed(connected || procon2_ble_is_active());
     if (connected == was_connected && kind == last_kind) {
         return;
     }
@@ -923,7 +919,7 @@ void __not_in_flash_func(service_classic_hid_connection)()
         g_xbox_input = {};
         g_procon_passthrough_valid = false;
         g_persona_combo_filter.reset();
-        if (steam_hog_bt_is_connected() || procon2_ble_is_ready()) {
+        if (ble_controller_hub_is_connected() || procon2_ble_is_ready()) {
             return;
         }
         g_auto_wake_armed = false;
@@ -975,21 +971,21 @@ void __not_in_flash_func(service_classic_hid_connection)()
     }
 }
 
-void __not_in_flash_func(service_steam_connection)()
+void __not_in_flash_func(service_ble_controller_connection)()
 {
     static bool was_connected = false;
-    static SteamHogBtControllerKind last_kind = SteamHogBtControllerKind::Unknown;
-    const bool connected = steam_hog_bt_is_connected();
-    const SteamHogBtControllerKind kind = steam_hog_bt_controller_kind();
+    static BleControllerKind last_kind = BleControllerKind::Unknown;
+    const bool connected = ble_controller_hub_is_connected();
+    const BleControllerKind kind = ble_controller_hub_controller_kind();
     if (connected == was_connected && kind == last_kind) {
         return;
     }
 
-    const SteamHogBtControllerKind previous_kind = last_kind;
+    const BleControllerKind previous_kind = last_kind;
     const bool became_connected = connected && !was_connected;
     const bool became_identified =
-        connected && kind != SteamHogBtControllerKind::Unknown &&
-        (became_connected || previous_kind == SteamHogBtControllerKind::Unknown);
+        connected && kind != BleControllerKind::Unknown &&
+        (became_connected || previous_kind == BleControllerKind::Unknown);
     was_connected = connected;
     last_kind = kind;
     if (kind != previous_kind) {
@@ -1051,7 +1047,7 @@ void __not_in_flash_func(service_procon2_ble_connection)()
         g_last_ns_buttons = 0;
         reset_procon2_back_assignment_runtime();
         g_procon_passthrough_valid = false;
-        if (classic_hid_is_connected() || steam_hog_bt_is_connected()) {
+        if (classic_hid_is_connected() || ble_controller_hub_is_connected()) {
             return;
         }
         g_auto_wake_armed = false;
@@ -1447,9 +1443,9 @@ void __no_inline_not_in_flash_func(app_loop)()
         tud_task();
         service_usb_mount_tracking();
         procon2_ble_service(board_millis());
-        steam_hog_bt_service(board_millis());
+        ble_controller_hub_service(board_millis());
         service_classic_hid_connection();
-        service_steam_connection();
+        service_ble_controller_connection();
         service_procon2_ble_connection();
         service_switch2_registration_probe();
         service_switch2_wake_policy();
@@ -1495,7 +1491,7 @@ int main()
     dualsense_audio_init();
     switch2_wake_init();
     classic_hid_register_data_callback(on_classic_hid_data);
-    steam_hog_bt_register_data_callback(on_steam_hog_bt_data);
+    ble_controller_hub_register_data_callback(on_ble_controller_data);
     procon2_ble_register_data_callback(on_procon2_ble_data);
 
     PlayStationInput neutral{};
@@ -1652,8 +1648,8 @@ extern "C" void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id,
     }
     if (procon2_ble_is_ready()) {
         (void)procon2_ble_send_switch_feedback(result.feedback);
-    } else if (steam_hog_bt_is_connected()) {
-        (void)steam_hog_bt_send_switch_feedback(result.feedback);
+    } else if (ble_controller_hub_is_connected()) {
+        (void)ble_controller_hub_send_switch_feedback(result.feedback);
     } else if (!bt_controller_is_switch_pro()) {
         apply_switch_feedback(result.feedback);
     }

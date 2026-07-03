@@ -5,7 +5,7 @@
 #include "switch_bridge/dualshock4_report.h"
 #include "switch_bridge/dualsense_report.h"
 #include "switch_bridge/procon2_ble.h"
-#include "switch_bridge/steam_hog_bt.h"
+#include "switch_bridge/ble_controller_hub.h"
 #include "switch_bridge/switch_identity.h"
 #include "switch_bridge/switch_usb.h"
 #include "switch_bridge/xbox_controller.h"
@@ -99,8 +99,8 @@ int g_blacklisted_addr_count = 0;
 bool g_blacklist_dirty = false;
 uint32_t g_blacklist_dirty_ms = 0;
 bool g_paused_for_switch2_wake = false;
-BtControllerKind g_controller_kind = BtControllerKind::Unknown;
-BtControllerKind g_controller_kind_hint = BtControllerKind::Unknown;
+BtControllerKind g_ble_controller_kind = BtControllerKind::Unknown;
+BtControllerKind g_ble_controller_kind_hint = BtControllerKind::Unknown;
 bool g_dualsense_init_sent = false;
 bool g_dualsense_features_requested = false;
 bool g_dualshock4_init_sent = false;
@@ -323,8 +323,8 @@ void reset_connection_state()
     g_hid_interrupt_opening = false;
     g_device_found = false;
     g_local_acl_initiated = false;
-    g_controller_kind = BtControllerKind::Unknown;
-    g_controller_kind_hint = BtControllerKind::Unknown;
+    g_ble_controller_kind = BtControllerKind::Unknown;
+    g_ble_controller_kind_hint = BtControllerKind::Unknown;
     g_dualsense_init_sent = false;
     g_dualsense_features_requested = false;
     g_dualshock4_init_sent = false;
@@ -491,11 +491,11 @@ void send_switch_pro_init()
 
 void set_controller_kind(BtControllerKind kind)
 {
-    if (kind == BtControllerKind::Unknown || g_controller_kind == kind) {
+    if (kind == BtControllerKind::Unknown || g_ble_controller_kind == kind) {
         return;
     }
 
-    g_controller_kind = kind;
+    g_ble_controller_kind = kind;
     std::printf("[BT] Controller kind: %s\n", controller_kind_name(kind));
     bt_debug_log_event(BtDebugEvent::ControllerKind,
                        controller_kind_code(kind));
@@ -513,11 +513,11 @@ void set_controller_kind(BtControllerKind kind)
 void continue_hid_open_after_probe()
 {
     if (g_sdp_kind_hint != BtControllerKind::Unknown) {
-        g_controller_kind_hint = g_sdp_kind_hint;
+        g_ble_controller_kind_hint = g_sdp_kind_hint;
     }
 
-    if (g_controller_kind_hint == BtControllerKind::SwitchPro ||
-        g_controller_kind_hint == BtControllerKind::Xbox) {
+    if (g_ble_controller_kind_hint == BtControllerKind::SwitchPro ||
+        g_ble_controller_kind_hint == BtControllerKind::Xbox) {
         open_next_outgoing_hid_channel();
         return;
     }
@@ -586,7 +586,7 @@ void classify_sdp_pnp_ids(uint16_t attribute_id)
 
 bool start_controller_kind_probe()
 {
-    if (g_controller_kind_hint != BtControllerKind::Unknown) {
+    if (g_ble_controller_kind_hint != BtControllerKind::Unknown) {
         return false;
     }
     g_sdp_kind_hint = BtControllerKind::Unknown;
@@ -848,7 +848,7 @@ void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type,
                                controller_kind_code(hint), 0,
                                static_cast<uint32_t>(cod));
             bd_addr_copy(g_current_addr, addr);
-            g_controller_kind_hint = hint;
+            g_ble_controller_kind_hint = hint;
             g_device_found = true;
             gap_inquiry_stop();
         }
@@ -865,7 +865,7 @@ void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type,
             std::printf("[BT] Connecting to %s\n", bd_addr_to_str(g_current_addr));
             g_local_acl_initiated = true;
             bt_debug_log_event(BtDebugEvent::CreateConnection,
-                               controller_kind_code(g_controller_kind_hint));
+                               controller_kind_code(g_ble_controller_kind_hint));
             hci_send_cmd(&hci_create_connection, g_current_addr,
                          hci_usable_acl_packet_types(), 0, 0, 0, 1);
         } else if (event_type == HCI_EVENT_INQUIRY_COMPLETE) {
@@ -895,7 +895,7 @@ void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type,
         bt_debug_log_event(BtDebugEvent::ConnectionRequest, 0, 0,
                            static_cast<uint32_t>(cod));
         bd_addr_copy(g_current_addr, addr);
-        g_controller_kind_hint = BtControllerKind::Unknown;
+        g_ble_controller_kind_hint = BtControllerKind::Unknown;
         g_local_acl_initiated = false;
         gap_inquiry_stop();
         hci_send_cmd(&hci_accept_connection_request, addr, 0x01);
@@ -905,13 +905,13 @@ void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type,
     case HCI_EVENT_CONNECTION_COMPLETE: {
         const uint8_t status = hci_event_connection_complete_get_status(packet);
         bt_debug_log_event(BtDebugEvent::ConnectionComplete,
-                           controller_kind_code(g_controller_kind_hint),
+                           controller_kind_code(g_ble_controller_kind_hint),
                            status,
                            status == ERROR_CODE_SUCCESS
                                ? hci_event_connection_complete_get_connection_handle(packet)
                                : 0);
         if (status == ERROR_CODE_SUCCESS) {
-            g_controller_kind = BtControllerKind::Unknown;
+            g_ble_controller_kind = BtControllerKind::Unknown;
             g_dualsense_init_sent = false;
             g_dualsense_features_requested = false;
             g_dualshock4_init_sent = false;
@@ -962,7 +962,7 @@ void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type,
     case HCI_EVENT_AUTHENTICATION_COMPLETE:
         bt_debug_log_event(
             BtDebugEvent::AuthComplete,
-            controller_kind_code(g_controller_kind_hint),
+            controller_kind_code(g_ble_controller_kind_hint),
             hci_event_authentication_complete_get_status(packet),
             hci_event_authentication_complete_get_connection_handle(packet));
         if (hci_event_authentication_complete_get_status(packet) ==
@@ -979,7 +979,7 @@ void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type,
     case HCI_EVENT_ENCRYPTION_CHANGE:
         bt_debug_log_event(
             BtDebugEvent::EncryptionChange,
-            controller_kind_code(g_controller_kind_hint),
+            controller_kind_code(g_ble_controller_kind_hint),
             static_cast<uint16_t>(
                 (hci_event_encryption_change_get_status(packet) << 8u) |
                 hci_event_encryption_change_get_encryption_enabled(packet)),
@@ -998,7 +998,7 @@ void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type,
             hci_event_disconnection_complete_get_reason(packet);
         std::printf("[BT] Disconnected reason=0x%02x\n", reason);
         bt_debug_log_event(BtDebugEvent::Disconnect,
-                           controller_kind_code(g_controller_kind), reason);
+                           controller_kind_code(g_ble_controller_kind), reason);
         reset_connection_state();
         while (!queue_is_empty(&g_send_fifo)) {
             SendElement discarded{};
@@ -1025,7 +1025,7 @@ void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type,
                     (size > 0 ? packet[0] : 0) |
                     ((size > 1 ? packet[1] : 0) << 8u);
                 bt_debug_log_event(BtDebugEvent::HidData,
-                                   controller_kind_code(g_controller_kind),
+                                   controller_kind_code(g_ble_controller_kind),
                                    size, first_bytes);
             }
             const BtControllerKind report_kind =
@@ -1053,7 +1053,7 @@ void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type,
                     (size > 0 ? packet[0] : 0) |
                     ((size > 1 ? packet[1] : 0) << 8u);
                 bt_debug_log_event(BtDebugEvent::HidData,
-                                   controller_kind_code(g_controller_kind),
+                                   controller_kind_code(g_ble_controller_kind),
                                    size, first_bytes | 0x80000000u);
             }
             set_controller_kind(kind_from_hid_report(packet, size));
@@ -1076,7 +1076,7 @@ void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type,
             l2cap_event_channel_opened_get_local_cid(packet);
         bt_debug_log_event(
             BtDebugEvent::L2capOpen,
-            controller_kind_code(g_controller_kind_hint),
+            controller_kind_code(g_ble_controller_kind_hint),
             static_cast<uint16_t>((status << 8u) | (psm & 0xffu)),
             (static_cast<uint32_t>(psm) << 16u) | local_cid);
         if (psm == PSM_HID_CONTROL) {
@@ -1099,18 +1099,18 @@ void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type,
         if (psm == PSM_HID_CONTROL) {
             g_hid_control_cid = local_cid;
             std::printf("[BT] HID control open cid=0x%04x\n", local_cid);
-            if (g_controller_kind_hint == BtControllerKind::SwitchPro) {
+            if (g_ble_controller_kind_hint == BtControllerKind::SwitchPro) {
                 set_controller_kind(BtControllerKind::SwitchPro);
-            } else if (g_controller_kind_hint == BtControllerKind::DualSense) {
+            } else if (g_ble_controller_kind_hint == BtControllerKind::DualSense) {
                 set_controller_kind(BtControllerKind::DualSense);
-            } else if (g_controller_kind_hint == BtControllerKind::DualShock4) {
+            } else if (g_ble_controller_kind_hint == BtControllerKind::DualShock4) {
                 set_controller_kind(BtControllerKind::DualShock4);
-            } else if (g_controller_kind_hint == BtControllerKind::Xbox) {
+            } else if (g_ble_controller_kind_hint == BtControllerKind::Xbox) {
                 set_controller_kind(BtControllerKind::Xbox);
             } else {
                 request_initial_features();
             }
-            if (g_controller_kind == BtControllerKind::DualShock4) {
+            if (g_ble_controller_kind == BtControllerKind::DualShock4) {
                 request_dualshock4_features();
             }
             if (g_local_acl_initiated) {
@@ -1124,16 +1124,16 @@ void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type,
             blacklist_remove(g_current_addr);
             gap_connectable_control(false);
             gap_discoverable_control(false);
-            if (g_controller_kind_hint != BtControllerKind::Unknown) {
-                set_controller_kind(g_controller_kind_hint);
+            if (g_ble_controller_kind_hint != BtControllerKind::Unknown) {
+                set_controller_kind(g_ble_controller_kind_hint);
             } else {
                 set_controller_kind(BtControllerKind::DualSense);
             }
-            if (g_controller_kind == BtControllerKind::DualSense) {
+            if (g_ble_controller_kind == BtControllerKind::DualSense) {
                 send_initial_output();
-            } else if (g_controller_kind == BtControllerKind::DualShock4) {
+            } else if (g_ble_controller_kind == BtControllerKind::DualShock4) {
                 send_dualshock4_initial_output();
-            } else if (g_controller_kind == BtControllerKind::SwitchPro) {
+            } else if (g_ble_controller_kind == BtControllerKind::SwitchPro) {
                 send_switch_pro_init();
             }
         }
@@ -1147,7 +1147,7 @@ void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type,
         std::printf("[BT] Incoming L2CAP psm=0x%04x cid=0x%04x\n",
                     psm, local_cid);
         bt_debug_log_event(BtDebugEvent::L2capIncoming,
-                           controller_kind_code(g_controller_kind_hint), psm,
+                           controller_kind_code(g_ble_controller_kind_hint), psm,
                            local_cid);
         l2cap_accept_connection(local_cid);
         break;
@@ -1157,7 +1157,7 @@ void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type,
         const uint16_t local_cid =
             l2cap_event_channel_closed_get_local_cid(packet);
         bt_debug_log_event(BtDebugEvent::L2capClosed,
-                           controller_kind_code(g_controller_kind), local_cid);
+                           controller_kind_code(g_ble_controller_kind), local_cid);
         if (local_cid == g_hid_control_cid) {
             g_hid_control_cid = 0;
             g_hid_control_opening = false;
@@ -1214,7 +1214,7 @@ bool classic_hid_init()
     queue_init(&g_send_fifo, sizeof(SendElement), kSendQueueDepth);
 
     l2cap_init();
-    steam_hog_bt_stack_init();
+    ble_controller_hub_stack_init();
     procon2_ble_stack_init();
     sdp_init();
     sdp_client_init();
@@ -1256,7 +1256,7 @@ bool __not_in_flash_func(classic_hid_is_connected)()
 
 BtControllerKind __not_in_flash_func(classic_hid_controller_kind)()
 {
-    return g_controller_kind;
+    return g_ble_controller_kind;
 }
 
 bool __not_in_flash_func(classic_hid_send_dualsense_output_report)(
@@ -1323,7 +1323,7 @@ std::size_t classic_hid_debug_counters_report(uint8_t *out, std::size_t len)
         out[6] = g_debug_counters.last_l2cap_status;
     }
     if (len > 7u) {
-        out[7] = static_cast<uint8_t>(g_controller_kind);
+        out[7] = static_cast<uint8_t>(g_ble_controller_kind);
     }
     put_u32_le(out, len, 8, g_debug_counters.enqueue_ok);
     put_u32_le(out, len, 12, g_debug_counters.enqueue_fail);
@@ -1346,7 +1346,7 @@ void classic_hid_reset_debug_counters()
 
 bool __not_in_flash_func(classic_hid_power_off_active_controller)()
 {
-    if (g_controller_kind != BtControllerKind::DualSense ||
+    if (g_ble_controller_kind != BtControllerKind::DualSense ||
         g_hid_control_cid == 0) {
         return false;
     }

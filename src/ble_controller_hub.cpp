@@ -1,6 +1,7 @@
-#include "switch_bridge/steam_hog_bt.h"
+#include "switch_bridge/ble_controller_hub.h"
 
 #include "switch_bridge/procon2_ble.h"
+#include "switch_bridge/steam_controller_ble.h"
 #include "switch_bridge/steam_controller.h"
 #include "switch_bridge/xbox_controller.h"
 
@@ -41,7 +42,7 @@ constexpr uint8_t kValveGattReportCharacteristicUuid[16] = {
     0x10, 0x0f, 0x6c, 0x34, 0x17, 0x35, 0x43, 0x13,
     0xb4, 0x02, 0x38, 0x56, 0x71, 0x31, 0xe5, 0xf3};
 
-enum class SteamHogState : uint8_t {
+enum class BleControllerHubState : uint8_t {
     Idle,
     Scanning,
     Connecting,
@@ -72,8 +73,8 @@ bd_addr_t g_remote_addr{};
 bd_addr_type_t g_remote_addr_type = BD_ADDR_TYPE_LE_PUBLIC;
 hci_con_handle_t g_con_handle = HCI_CON_HANDLE_INVALID;
 uint16_t g_hids_cid = 0;
-SteamHogBtDataCallback g_data_callback = nullptr;
-SteamHogState g_state = SteamHogState::Idle;
+BleControllerDataCallback g_data_callback = nullptr;
+BleControllerHubState g_state = BleControllerHubState::Idle;
 uint8_t g_hid_descriptor_storage[kHidsDescriptorStorageSize]{};
 TxReport g_tx_queue[kTxQueueDepth]{};
 uint8_t g_tx_head = 0;
@@ -87,8 +88,8 @@ bool g_stack_ready = false;
 bool g_write_ready = false;
 bool g_xbox_input_probe_pending = false;
 bool g_scan_suppressed = false;
-SteamHogBtControllerKind g_controller_kind = SteamHogBtControllerKind::Unknown;
-SteamHogBtControllerKind g_last_seen_kind = SteamHogBtControllerKind::Unknown;
+BleControllerKind g_ble_controller_kind = BleControllerKind::Unknown;
+BleControllerKind g_last_seen_ble_kind = BleControllerKind::Unknown;
 ValveGattState g_valve_gatt_state = ValveGattState::Idle;
 bool g_valve_service_found = false;
 bool g_valve_power_off_pending = false;
@@ -108,20 +109,20 @@ uint32_t now_ms()
 
 bool state_is_connected()
 {
-    return g_state == SteamHogState::Connected && g_hids_cid != 0;
+    return g_state == BleControllerHubState::Connected && g_hids_cid != 0;
 }
 
 bool can_write_hid_report()
 {
-    return (g_state == SteamHogState::Connected ||
-            g_state == SteamHogState::Paused) &&
+    return (g_state == BleControllerHubState::Connected ||
+            g_state == BleControllerHubState::Paused) &&
            g_hids_cid != 0;
 }
 
 bool steam_link_open_for_gatt()
 {
-    return (g_state == SteamHogState::Connected ||
-            g_state == SteamHogState::Paused) &&
+    return (g_state == BleControllerHubState::Connected ||
+            g_state == BleControllerHubState::Paused) &&
            g_con_handle != HCI_CON_HANDLE_INVALID;
 }
 
@@ -163,7 +164,7 @@ bool start_valve_gatt_discovery()
     const uint8_t status = gatt_client_discover_primary_services_by_uuid128(
         valve_gatt_packet_handler, g_con_handle, kValveGattServiceUuid);
     if (status != ERROR_CODE_SUCCESS) {
-        std::printf("[SC-BLE] Valve GATT service discovery failed status=0x%02x\n",
+        std::printf("[STEAM-BLE] Valve GATT service discovery failed status=0x%02x\n",
                     status);
         g_valve_gatt_state = ValveGattState::Idle;
         return false;
@@ -193,7 +194,7 @@ bool try_valve_power_off_write()
             static_cast<uint16_t>(len), g_valve_power_off_value);
         if (status == ERROR_CODE_SUCCESS) {
             g_valve_power_off_pending = false;
-            std::printf("[SC-BLE] Valve GATT power-off write request queued\n");
+            std::printf("[STEAM-BLE] Valve GATT power-off write request queued\n");
             return true;
         }
         g_valve_gatt_state = ValveGattState::Ready;
@@ -205,12 +206,12 @@ bool try_valve_power_off_write()
             g_valve_power_off_value);
         if (status == ERROR_CODE_SUCCESS) {
             g_valve_power_off_pending = false;
-            std::printf("[SC-BLE] Valve GATT power-off write command sent\n");
+            std::printf("[STEAM-BLE] Valve GATT power-off write command sent\n");
             return true;
         }
     }
 
-    std::printf("[SC-BLE] Valve GATT power-off write failed status=0x%02x props=0x%04x\n",
+    std::printf("[STEAM-BLE] Valve GATT power-off write failed status=0x%02x props=0x%04x\n",
                 status, g_valve_report_properties);
     return false;
 }
@@ -390,28 +391,28 @@ bool adv_is_xbox_controller(const uint8_t *packet)
     return ad_data_contains_company_id(ad_data, ad_len, kMicrosoftCompanyId);
 }
 
-SteamHogBtControllerKind kind_from_hog_report(const uint8_t *report,
+BleControllerKind kind_from_hogp_report(const uint8_t *report,
                                               uint16_t report_len)
 {
     if (report == nullptr || report_len == 0u) {
-        return SteamHogBtControllerKind::Unknown;
+        return BleControllerKind::Unknown;
     }
     if (report[0] == kSteamControllerReportState ||
         report[0] == kSteamControllerReportStateLegacy) {
-        return SteamHogBtControllerKind::SteamController;
+        return BleControllerKind::SteamController;
     }
     if (report_len == kXboxElite2InputPayloadSize) {
-        return SteamHogBtControllerKind::Xbox;
+        return BleControllerKind::Xbox;
     }
     if (report_len >= kXboxElite2InputReportSize &&
         (report[0] == kXboxInputReportId || report[0] == 0x00u)) {
-        return SteamHogBtControllerKind::Xbox;
+        return BleControllerKind::Xbox;
     }
     if (report_len == kXboxInputReportMinSize &&
         (report[0] == kXboxInputReportId || report[0] == 0x00u)) {
-        return SteamHogBtControllerKind::Xbox;
+        return BleControllerKind::Xbox;
     }
-    return SteamHogBtControllerKind::Unknown;
+    return BleControllerKind::Unknown;
 }
 
 bool adv_is_steam_reconnect_directed(const uint8_t *packet)
@@ -480,7 +481,7 @@ void try_tx()
         if (status == ERROR_CODE_COMMAND_DISALLOWED) {
             return;
         }
-        std::printf("[SC-BLE] Drop report 0x%02x type=%u status=0x%02x\n",
+        std::printf("[BLE-HUB] Drop report 0x%02x type=%u status=0x%02x\n",
                     front.report_id, static_cast<unsigned>(front.report_type),
                     status);
         tx_pop_front();
@@ -490,7 +491,7 @@ void try_tx()
 void try_xbox_input_probe()
 {
     if (!g_xbox_input_probe_pending || !state_is_connected() ||
-        g_controller_kind != SteamHogBtControllerKind::Xbox) {
+        g_ble_controller_kind != BleControllerKind::Xbox) {
         return;
     }
 
@@ -571,7 +572,7 @@ void enqueue_pulse(uint8_t side, uint8_t pulse, uint32_t now_ms,
 bool enqueue_trackpad_local_haptic(bool left, bool strong_click)
 {
     if (!state_is_connected() ||
-        g_controller_kind != SteamHogBtControllerKind::SteamController) {
+        g_ble_controller_kind != BleControllerKind::SteamController) {
         return false;
     }
 
@@ -607,7 +608,7 @@ bool enqueue_trackpad_local_haptic(bool left, bool strong_click)
 void clear_runtime_state(bool schedule_scan)
 {
     reset_valve_gatt();
-    g_controller_kind = SteamHogBtControllerKind::Unknown;
+    g_ble_controller_kind = BleControllerKind::Unknown;
     g_con_handle = HCI_CON_HANDLE_INVALID;
     g_hids_cid = 0;
     g_write_ready = false;
@@ -617,55 +618,48 @@ void clear_runtime_state(bool schedule_scan)
     g_next_heartbeat_ms = 0;
     g_last_left_pulse_ms = 0;
     g_last_right_pulse_ms = 0;
-    if (g_state != SteamHogState::Paused) {
-        g_state = SteamHogState::Idle;
+    if (g_state != BleControllerHubState::Paused) {
+        g_state = BleControllerHubState::Idle;
     }
     if (schedule_scan) {
         g_next_scan_ms = now_ms() + kReconnectDelayMs;
     }
 }
 
-void start_scan(uint32_t now_ms)
+void start_ble_scan(uint32_t now_ms)
 {
-    if (g_scan_suppressed || !g_stack_ready || g_state != SteamHogState::Idle ||
+    if (g_scan_suppressed || !g_stack_ready || g_state != BleControllerHubState::Idle ||
         static_cast<int32_t>(now_ms - g_next_scan_ms) < 0) {
         return;
     }
 
-    std::printf("[SC-BLE] Start LE HID scan\n");
+    std::printf("[BLE-HUB] Start LE HID scan\n");
     gap_set_scan_parameters(1, 48, 48);
     gap_start_scan();
-    g_state = SteamHogState::Scanning;
+    g_state = BleControllerHubState::Scanning;
     g_state_ms = now_ms;
 }
 
-void stop_scan()
-{
-    if (g_state == SteamHogState::Scanning) {
-        gap_stop_scan();
-    }
-}
-
-void connect_to_advertiser(uint8_t *packet, SteamHogBtControllerKind kind)
+void connect_to_ble_advertiser(uint8_t *packet, BleControllerKind kind)
 {
     gap_event_advertising_report_get_address(packet, g_remote_addr);
     g_remote_addr_type = static_cast<bd_addr_type_t>(
         gap_event_advertising_report_get_address_type(packet));
-    g_controller_kind =
-        kind == SteamHogBtControllerKind::Unknown ? g_last_seen_kind : kind;
-    if (g_controller_kind != SteamHogBtControllerKind::Unknown) {
-        g_last_seen_kind = g_controller_kind;
+    g_ble_controller_kind =
+        kind == BleControllerKind::Unknown ? g_last_seen_ble_kind : kind;
+    if (g_ble_controller_kind != BleControllerKind::Unknown) {
+        g_last_seen_ble_kind = g_ble_controller_kind;
     }
     gap_stop_scan();
-    g_state = SteamHogState::Connecting;
+    g_state = BleControllerHubState::Connecting;
     g_state_ms = now_ms();
-    std::printf("[SC-BLE] Connect %s type=%u kind=%u\n",
+    std::printf("[BLE-HUB] Connect %s type=%u kind=%u\n",
                 bd_addr_to_str(g_remote_addr),
                 static_cast<unsigned>(g_remote_addr_type),
-                static_cast<unsigned>(g_controller_kind));
+                static_cast<unsigned>(g_ble_controller_kind));
     const uint8_t status = gap_connect(g_remote_addr, g_remote_addr_type);
     if (status != ERROR_CODE_SUCCESS) {
-        std::printf("[SC-BLE] gap_connect failed status=0x%02x\n", status);
+        std::printf("[BLE-HUB] gap_connect failed status=0x%02x\n", status);
         clear_runtime_state(true);
     }
 }
@@ -702,7 +696,7 @@ void valve_gatt_packet_handler(uint8_t packet_type, uint16_t channel,
         const uint8_t status = gatt_event_query_complete_get_att_status(packet);
         if (g_valve_gatt_state == ValveGattState::DiscoveringService) {
             if (status != ATT_ERROR_SUCCESS || !g_valve_service_found) {
-                std::printf("[SC-BLE] Valve GATT service not found status=0x%02x\n",
+                std::printf("[STEAM-BLE] Valve GATT service not found status=0x%02x\n",
                             status);
                 g_valve_gatt_state = ValveGattState::Unavailable;
                 g_valve_power_off_pending = false;
@@ -714,7 +708,7 @@ void valve_gatt_packet_handler(uint8_t packet_type, uint16_t channel,
                     valve_gatt_packet_handler, g_con_handle, &g_valve_service,
                     kValveGattReportCharacteristicUuid);
             if (discover_status != ERROR_CODE_SUCCESS) {
-                std::printf("[SC-BLE] Valve GATT characteristic discovery failed status=0x%02x\n",
+                std::printf("[STEAM-BLE] Valve GATT characteristic discovery failed status=0x%02x\n",
                             discover_status);
                 g_valve_gatt_state = ValveGattState::Idle;
             }
@@ -724,12 +718,12 @@ void valve_gatt_packet_handler(uint8_t packet_type, uint16_t channel,
         if (g_valve_gatt_state == ValveGattState::DiscoveringCharacteristic) {
             if (status == ATT_ERROR_SUCCESS && g_valve_report_value_handle != 0) {
                 g_valve_gatt_state = ValveGattState::Ready;
-                std::printf("[SC-BLE] Valve GATT report handle=0x%04x props=0x%04x\n",
+                std::printf("[STEAM-BLE] Valve GATT report handle=0x%04x props=0x%04x\n",
                             g_valve_report_value_handle,
                             g_valve_report_properties);
                 (void)try_pending_valve_power_off();
             } else {
-                std::printf("[SC-BLE] Valve GATT report characteristic not found status=0x%02x\n",
+                std::printf("[STEAM-BLE] Valve GATT report characteristic not found status=0x%02x\n",
                             status);
                 g_valve_gatt_state = ValveGattState::Unavailable;
                 g_valve_power_off_pending = false;
@@ -739,7 +733,7 @@ void valve_gatt_packet_handler(uint8_t packet_type, uint16_t channel,
 
         if (g_valve_gatt_state == ValveGattState::WritingPowerOff) {
             g_valve_gatt_state = ValveGattState::Ready;
-            std::printf("[SC-BLE] Valve GATT power-off write complete status=0x%02x\n",
+            std::printf("[STEAM-BLE] Valve GATT power-off write complete status=0x%02x\n",
                         status);
             try_tx();
             break;
@@ -768,7 +762,7 @@ void hids_packet_handler(uint8_t packet_type, uint16_t channel,
         const uint8_t status =
             gattservice_subevent_hid_service_connected_get_status(packet);
         if (status != ERROR_CODE_SUCCESS) {
-            std::printf("[SC-BLE] HIDS connect failed status=0x%02x\n", status);
+            std::printf("[BLE-HUB] HIDS connect failed status=0x%02x\n", status);
             if (g_con_handle != HCI_CON_HANDLE_INVALID) {
                 (void)gap_disconnect(g_con_handle);
             }
@@ -776,22 +770,22 @@ void hids_packet_handler(uint8_t packet_type, uint16_t channel,
             return;
         }
         g_hids_cid = gattservice_subevent_hid_service_connected_get_hids_cid(packet);
-        g_state = SteamHogState::Connected;
+        g_state = BleControllerHubState::Connected;
         g_write_ready = true;
         g_next_heartbeat_ms = now_ms();
-        std::printf("[SC-BLE] HIDS connected cid=0x%04x services=%u\n",
+        std::printf("[BLE-HUB] HIDS connected cid=0x%04x services=%u\n",
                     g_hids_cid,
                     gattservice_subevent_hid_service_connected_get_num_instances(packet));
-        if (g_controller_kind == SteamHogBtControllerKind::SteamController) {
+        if (g_ble_controller_kind == BleControllerKind::SteamController) {
             enqueue_init_commands();
-        } else if (g_controller_kind == SteamHogBtControllerKind::Xbox) {
+        } else if (g_ble_controller_kind == BleControllerKind::Xbox) {
             g_xbox_input_probe_pending = true;
         }
         break;
     }
 
     case GATTSERVICE_SUBEVENT_HID_SERVICE_DISCONNECTED:
-        std::printf("[SC-BLE] HIDS disconnected\n");
+        std::printf("[BLE-HUB] HIDS disconnected\n");
         clear_runtime_state(true);
         break;
 
@@ -804,15 +798,15 @@ void hids_packet_handler(uint8_t packet_type, uint16_t channel,
             gattservice_subevent_hid_report_get_report(packet);
         const uint16_t report_len =
             gattservice_subevent_hid_report_get_report_len(packet);
-        const SteamHogBtControllerKind report_kind =
-            kind_from_hog_report(report, report_len);
-        if (report_kind != SteamHogBtControllerKind::Unknown &&
-            report_kind != g_controller_kind) {
-            g_controller_kind = report_kind;
-            g_last_seen_kind = report_kind;
+        const BleControllerKind report_kind =
+            kind_from_hogp_report(report, report_len);
+        if (report_kind != BleControllerKind::Unknown &&
+            report_kind != g_ble_controller_kind) {
+            g_ble_controller_kind = report_kind;
+            g_last_seen_ble_kind = report_kind;
         }
         if (g_data_callback != nullptr && report_len != 0u) {
-            g_data_callback(g_controller_kind, report, report_len);
+            g_data_callback(g_ble_controller_kind, report, report_len);
         }
         break;
     }
@@ -845,7 +839,7 @@ void sm_packet_handler(uint8_t packet_type, uint16_t channel,
         const hci_con_handle_t handle =
             sm_event_just_works_request_get_handle(packet);
         if (handle == g_con_handle) {
-            std::printf("[SC-BLE] Accept Just Works pairing\n");
+            std::printf("[BLE-HUB] Accept Just Works pairing\n");
             sm_just_works_confirm(handle);
         }
         break;
@@ -856,7 +850,7 @@ void sm_packet_handler(uint8_t packet_type, uint16_t channel,
             sm_event_pairing_complete_get_handle(packet);
         if (handle == g_con_handle) {
             const uint8_t status = sm_event_pairing_complete_get_status(packet);
-            std::printf("[SC-BLE] Pairing complete status=0x%02x reason=0x%02x\n",
+            std::printf("[BLE-HUB] Pairing complete status=0x%02x reason=0x%02x\n",
                         status, sm_event_pairing_complete_get_reason(packet));
         }
         break;
@@ -881,24 +875,24 @@ void hci_packet_handler(uint8_t packet_type, uint16_t channel,
         if (btstack_event_state_get_state(packet) == HCI_STATE_WORKING) {
             g_stack_ready = true;
             g_next_scan_ms = now_ms();
-            start_scan(g_next_scan_ms);
+            start_ble_scan(g_next_scan_ms);
         }
         break;
 
     case GAP_EVENT_ADVERTISING_REPORT:
-        if (g_state == SteamHogState::Scanning) {
+        if (g_state == BleControllerHubState::Scanning) {
             if (procon2_ble_handle_advertising_report(packet)) {
                 clear_runtime_state(false);
                 g_scan_suppressed = true;
             } else if (adv_is_xbox_controller(packet)) {
-                connect_to_advertiser(packet,
-                                      SteamHogBtControllerKind::Xbox);
+                connect_to_ble_advertiser(packet,
+                                      BleControllerKind::Xbox);
             } else if (adv_is_steam_controller(packet)) {
-                connect_to_advertiser(
-                    packet, SteamHogBtControllerKind::SteamController);
+                connect_to_ble_advertiser(
+                    packet, BleControllerKind::SteamController);
             } else if (adv_is_steam_reconnect_directed(packet)) {
-                connect_to_advertiser(
-                    packet, SteamHogBtControllerKind::Unknown);
+                connect_to_ble_advertiser(
+                    packet, BleControllerKind::Unknown);
             }
         }
         break;
@@ -906,13 +900,13 @@ void hci_packet_handler(uint8_t packet_type, uint16_t channel,
     case HCI_EVENT_META_GAP:
         if (hci_event_gap_meta_get_subevent_code(packet) ==
             GAP_SUBEVENT_LE_CONNECTION_COMPLETE) {
-            if (g_state != SteamHogState::Connecting) {
+            if (g_state != BleControllerHubState::Connecting) {
                 break;
             }
             const uint8_t status =
                 gap_subevent_le_connection_complete_get_status(packet);
             if (status != ERROR_CODE_SUCCESS) {
-                std::printf("[SC-BLE] LE connect failed status=0x%02x\n",
+                std::printf("[BLE-HUB] LE connect failed status=0x%02x\n",
                             status);
                 clear_runtime_state(true);
                 break;
@@ -920,13 +914,13 @@ void hci_packet_handler(uint8_t packet_type, uint16_t channel,
             g_con_handle =
                 gap_subevent_le_connection_complete_get_connection_handle(packet);
             reset_valve_gatt();
-            g_state = SteamHogState::HidsConnecting;
+            g_state = BleControllerHubState::HidsConnecting;
             g_state_ms = now_ms();
             const uint8_t hids_status = hids_client_connect(
                 g_con_handle, hids_packet_handler, HID_PROTOCOL_MODE_REPORT,
                 &g_hids_cid);
             if (hids_status != ERROR_CODE_SUCCESS) {
-                std::printf("[SC-BLE] hids_client_connect failed status=0x%02x\n",
+                std::printf("[BLE-HUB] hids_client_connect failed status=0x%02x\n",
                             hids_status);
                 (void)gap_disconnect(g_con_handle);
                 clear_runtime_state(true);
@@ -938,7 +932,7 @@ void hci_packet_handler(uint8_t packet_type, uint16_t channel,
         const hci_con_handle_t handle =
             hci_event_disconnection_complete_get_connection_handle(packet);
         if (handle == g_con_handle) {
-            std::printf("[SC-BLE] LE disconnected\n");
+            std::printf("[BLE-HUB] LE disconnected\n");
             clear_runtime_state(true);
         }
         break;
@@ -951,12 +945,12 @@ void hci_packet_handler(uint8_t packet_type, uint16_t channel,
 
 } // namespace
 
-void steam_hog_bt_register_data_callback(SteamHogBtDataCallback callback)
+void ble_controller_hub_register_data_callback(BleControllerDataCallback callback)
 {
     g_data_callback = callback;
 }
 
-void steam_hog_bt_stack_init()
+void ble_controller_hub_stack_init()
 {
     sm_init();
     sm_set_io_capabilities(IO_CAPABILITY_NO_INPUT_NO_OUTPUT);
@@ -974,19 +968,19 @@ void steam_hog_bt_stack_init()
     sm_add_event_handler(&g_sm_callback);
 }
 
-void steam_hog_bt_service(uint32_t now_ms)
+void ble_controller_hub_service(uint32_t now_ms)
 {
-    if (g_state == SteamHogState::Paused) {
+    if (g_state == BleControllerHubState::Paused) {
         (void)try_pending_valve_power_off();
         return;
     }
 
-    if (g_state == SteamHogState::Idle) {
-        start_scan(now_ms);
-    } else if (g_state == SteamHogState::Connecting ||
-               g_state == SteamHogState::HidsConnecting) {
+    if (g_state == BleControllerHubState::Idle) {
+        start_ble_scan(now_ms);
+    } else if (g_state == BleControllerHubState::Connecting ||
+               g_state == BleControllerHubState::HidsConnecting) {
         if (now_ms - g_state_ms >= kConnectTimeoutMs) {
-            std::printf("[SC-BLE] Connect timeout\n");
+            std::printf("[BLE-HUB] Connect timeout\n");
             (void)gap_connect_cancel();
             if (g_con_handle != HCI_CON_HANDLE_INVALID) {
                 (void)gap_disconnect(g_con_handle);
@@ -996,7 +990,7 @@ void steam_hog_bt_service(uint32_t now_ms)
     }
 
     if (state_is_connected() &&
-        g_controller_kind == SteamHogBtControllerKind::SteamController) {
+        g_ble_controller_kind == BleControllerKind::SteamController) {
         if (g_valve_power_off_pending) {
             (void)try_pending_valve_power_off();
         } else if (g_valve_gatt_state == ValveGattState::Idle &&
@@ -1006,7 +1000,7 @@ void steam_hog_bt_service(uint32_t now_ms)
     }
 
     if (state_is_connected() &&
-        g_controller_kind == SteamHogBtControllerKind::SteamController &&
+        g_ble_controller_kind == BleControllerKind::SteamController &&
         static_cast<int32_t>(now_ms - g_next_heartbeat_ms) >= 0) {
         enqueue_init_commands();
         g_next_heartbeat_ms = now_ms + kInitHeartbeatMs;
@@ -1015,24 +1009,24 @@ void steam_hog_bt_service(uint32_t now_ms)
     try_tx();
 }
 
-bool steam_hog_bt_is_connected()
+bool ble_controller_hub_is_connected()
 {
     return state_is_connected();
 }
 
-SteamHogBtControllerKind steam_hog_bt_controller_kind()
+BleControllerKind ble_controller_hub_controller_kind()
 {
-    return state_is_connected() ? g_controller_kind
-                                : SteamHogBtControllerKind::Unknown;
+    return state_is_connected() ? g_ble_controller_kind
+                                : BleControllerKind::Unknown;
 }
 
-bool steam_hog_bt_send_switch_feedback(const SwitchUsbFeedback &feedback)
+bool ble_controller_hub_send_switch_feedback(const SwitchUsbFeedback &feedback)
 {
     if (!state_is_connected() || !feedback.has_rumble) {
         return false;
     }
 
-    if (g_controller_kind == SteamHogBtControllerKind::Xbox) {
+    if (g_ble_controller_kind == BleControllerKind::Xbox) {
         uint8_t report[kXboxRumbleReportSize]{};
         const std::size_t len =
             build_xbox_rumble_output(feedback.haptics, report, sizeof(report));
@@ -1045,7 +1039,7 @@ bool steam_hog_bt_send_switch_feedback(const SwitchUsbFeedback &feedback)
         return queued;
     }
 
-    if (g_controller_kind != SteamHogBtControllerKind::SteamController) {
+    if (g_ble_controller_kind != BleControllerKind::SteamController) {
         return false;
     }
 
@@ -1073,7 +1067,7 @@ bool steam_hog_bt_send_switch_feedback(const SwitchUsbFeedback &feedback)
     return queued;
 }
 
-bool steam_hog_bt_pulse_trackpad_haptic(bool left, bool strong_click)
+bool steam_controller_ble_pulse_trackpad_haptic(bool left, bool strong_click)
 {
     const bool queued = enqueue_trackpad_local_haptic(left, strong_click);
     if (queued) {
@@ -1082,14 +1076,14 @@ bool steam_hog_bt_pulse_trackpad_haptic(bool left, bool strong_click)
     return queued;
 }
 
-bool steam_hog_bt_disconnect()
+bool ble_controller_hub_disconnect()
 {
-    if (g_state == SteamHogState::Scanning) {
+    if (g_state == BleControllerHubState::Scanning) {
         gap_stop_scan();
-        g_state = SteamHogState::Idle;
+        g_state = BleControllerHubState::Idle;
         return true;
     }
-    if (g_state == SteamHogState::Connecting) {
+    if (g_state == BleControllerHubState::Connecting) {
         (void)gap_connect_cancel();
         clear_runtime_state(true);
         return true;
@@ -1103,10 +1097,10 @@ bool steam_hog_bt_disconnect()
     return false;
 }
 
-bool steam_hog_bt_power_off()
+bool steam_controller_ble_power_off()
 {
     if (!steam_link_open_for_gatt() ||
-        g_controller_kind != SteamHogBtControllerKind::SteamController) {
+        g_ble_controller_kind != BleControllerKind::SteamController) {
         return false;
     }
 
@@ -1121,61 +1115,61 @@ bool steam_hog_bt_power_off()
            g_valve_gatt_state == ValveGattState::WritingPowerOff;
 }
 
-void steam_hog_bt_pause_for_switch2_wake()
+void ble_controller_hub_pause_for_switch2_wake()
 {
-    if (g_state == SteamHogState::Paused) {
+    if (g_state == BleControllerHubState::Paused) {
         return;
     }
 
-    std::printf("[SC-BLE] Pause for Switch 2 wake\n");
-    if (g_state == SteamHogState::Scanning) {
+    std::printf("[BLE-HUB] Pause for Switch 2 wake\n");
+    if (g_state == BleControllerHubState::Scanning) {
         gap_stop_scan();
-    } else if (g_state == SteamHogState::Connecting) {
+    } else if (g_state == BleControllerHubState::Connecting) {
         (void)gap_connect_cancel();
     }
-    g_state = SteamHogState::Paused;
+    g_state = BleControllerHubState::Paused;
 }
 
-void steam_hog_bt_resume_after_switch2_wake()
+void ble_controller_hub_resume_after_switch2_wake()
 {
-    if (g_state != SteamHogState::Paused) {
+    if (g_state != BleControllerHubState::Paused) {
         return;
     }
 
-    std::printf("[SC-BLE] Resume after Switch 2 wake\n");
+    std::printf("[BLE-HUB] Resume after Switch 2 wake\n");
     if (g_hids_cid != 0) {
-        g_state = SteamHogState::Connected;
+        g_state = BleControllerHubState::Connected;
         g_next_heartbeat_ms = now_ms();
         try_tx();
         return;
     }
     if (g_con_handle != HCI_CON_HANDLE_INVALID) {
-        g_state = SteamHogState::HidsConnecting;
+        g_state = BleControllerHubState::HidsConnecting;
         g_state_ms = now_ms();
         return;
     }
     clear_runtime_state(false);
-    g_state = SteamHogState::Idle;
+    g_state = BleControllerHubState::Idle;
     g_next_scan_ms = now_ms() + kReconnectDelayMs;
 }
 
-void steam_hog_bt_set_scan_suppressed(bool suppressed)
+void ble_controller_hub_set_scan_suppressed(bool suppressed)
 {
     if (g_scan_suppressed == suppressed) {
         return;
     }
     g_scan_suppressed = suppressed;
     if (suppressed) {
-        if (g_state == SteamHogState::Scanning) {
+        if (g_state == BleControllerHubState::Scanning) {
             gap_stop_scan();
-            g_state = SteamHogState::Idle;
-        } else if (g_state == SteamHogState::Connecting) {
+            g_state = BleControllerHubState::Idle;
+        } else if (g_state == BleControllerHubState::Connecting) {
             (void)gap_connect_cancel();
             clear_runtime_state(false);
         }
         return;
     }
-    if (g_state == SteamHogState::Idle) {
+    if (g_state == BleControllerHubState::Idle) {
         g_next_scan_ms = now_ms() + kReconnectDelayMs;
     }
 }

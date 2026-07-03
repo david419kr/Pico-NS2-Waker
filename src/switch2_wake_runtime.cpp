@@ -2,7 +2,8 @@
 
 #include "switch_bridge/controller_feedback.h"
 #include "switch_bridge/classic_hid_bt.h"
-#include "switch_bridge/steam_hog_bt.h"
+#include "switch_bridge/ble_controller_hub.h"
+#include "switch_bridge/steam_controller_ble.h"
 #include "switch_bridge/switch2_wake.h"
 
 #include "bsp/board_api.h"
@@ -129,14 +130,14 @@ bool disconnect_classic_controller_for_wake()
     std::printf("[S2WK] Wake requested, power off/disconnect controller "
                 "before advertise\n");
     (void)classic_hid_power_off_active_controller();
-    const bool steam_power_off_queued = steam_hog_bt_power_off();
+    const bool steam_power_off_queued = steam_controller_ble_power_off();
     (void)classic_hid_disconnect();
     return steam_power_off_queued;
 }
 
 void start_wake_advertising_after_controller_pause()
 {
-    steam_hog_bt_pause_for_switch2_wake();
+    ble_controller_hub_pause_for_switch2_wake();
     start_advertising();
 }
 
@@ -144,7 +145,7 @@ void finish_attempt(bool apply_cooldown)
 {
     stop_advertising();
     classic_hid_resume_after_switch2_wake();
-    steam_hog_bt_resume_after_switch2_wake();
+    ble_controller_hub_resume_after_switch2_wake();
     const uint32_t now = board_millis();
     if (apply_cooldown) {
         g_state = WakeState::Cooldown;

@@ -67,7 +67,7 @@ add_executable(switchbridge
     src/main.cpp
     src/procon2_ble.cpp
     src/ram_mem.c
-    src/steam_hog_bt.cpp
+    src/ble_controller_hub.cpp
     src/switch2_wake_runtime.cpp
     src/usb_descriptors.cpp
 )
