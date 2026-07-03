@@ -1,7 +1,7 @@
 #include "switch_bridge/steam_controller_ble.h"
 
-#include "ble_controller_hub_internal.h"
-#include "steam_controller_ble_internal.h"
+#include "switch_bridge/ble_controller_hub_internal.h"
+#include "switch_bridge/steam_controller_ble_internal.h"
 #include "switch_bridge/steam_controller.h"
 
 #include "ad_parser.h"
