@@ -21,9 +21,15 @@ Credits:
 
 - 각 컨트롤러를 `Nintendo Switch Pro Controller`로 인식시킵니다.
 - Nintendo Switch 2를 슬립 상태에서 깨울 수 있습니다.
+
+https://github.com/user-attachments/assets/dea20fe9-8edf-4bef-8fdd-d5cd34437783
 - 모션 컨트롤과 진동을 지원합니다. 단, Xbox 컨트롤러는 모션 컨트롤을 지원하지 않습니다.
 - 스위치 1/2에서 DualSense의 3.5 mm 단자를 이용 가능합니다. 스위치 2에서는 DualSense의 마이크도 이용 가능합니다.
+
+https://github.com/user-attachments/assets/225a063a-80ea-4c13-8344-486e1939610d
 - 부수적인 유용한 기능으로, 스위치 1 혹은 PC에서 무선으로 프로콘 2를 사용할 수 있습니다.(프로콘 1로 인식됩니다.)
+
+https://github.com/user-attachments/assets/a7da5a1b-848a-4aae-9a14-d3d722f3f5a4
 
 ## 준비물
 
