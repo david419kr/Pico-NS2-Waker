@@ -1,7 +1,17 @@
-# "아무 컨트롤러로 스위치2를 깨우기" 동글
+# Pico Nintendo Switch 2 깨우기 동글
 
-Raspberry Pi Pico 2 W를 이용해 DualSense, DualShock 4, Nintendo Switch Pro Controller 1/2, Steam Controller, Xbox Bluetooth 컨트롤러를 Nintendo Switch 1/2에서 사용 가능하게 하는 펌웨어입니다.  
-어떤 컨트롤러를 사용해도 Switch 2 슬립모드를 깨울 수 있습니다. (※Switch 1 깨우기는 지원하지 않습니다.)
+Raspberry Pi Pico 2 W를 이용해 다양한 컨트롤러를 Nintendo Switch 1/2에서 사용 가능하게 하는 펌웨어입니다.  
+지원되는 어떤 컨트롤러를 사용해도 Switch 2 슬립모드를 깨울 수 있습니다. (※Switch 1 깨우기는 지원하지 않습니다.)
+
+지원 컨트롤러 목록:
+
+| 컨트롤러 | 비고 |
+| --- | --- |
+| DualSense | DualSense 마이크 및 3.5mm 오디오 지원 |
+| DualShock 4 | - |
+| Nintendo Switch Pro Controller 1/2 | - |
+| Steam Controller | 블루투스 모드 (Steam + L1 + B) |
+| Xbox Bluetooth | Xbox One S 컨트롤러와 Xbox Elite 2 테스트됨. 그 외에는 동작 확인되지 않음. |
 
 Credits:  
 컨트롤러 동작을 분석하는 데에 [ataradov/usb-sniffer](https://github.com/ataradov/usb-sniffer)와 [homewsn/blesniff](https://github.com/homewsn/blesniff)가 큰 도움이 되었습니다.  
@@ -13,7 +23,7 @@ Credits:
 - Nintendo Switch 2를 슬립 상태에서 깨울 수 있습니다.
 - 모션 컨트롤과 진동을 지원합니다. 단, Xbox 컨트롤러는 모션 컨트롤을 지원하지 않습니다.
 - 스위치 1/2에서 DualSense의 3.5 mm 단자를 이용 가능합니다. 스위치 2에서는 DualSense의 마이크도 이용 가능합니다.
-- 스위치 1 혹은 PC에서 무선으로 프로콘 2를 사용할 수 있습니다.(프로콘 1로 인식됩니다.)
+- 부수적인 유용한 기능으로, 스위치 1 혹은 PC에서 무선으로 프로콘 2를 사용할 수 있습니다.(프로콘 1로 인식됩니다.)
 
 ## 준비물
 
@@ -42,7 +52,7 @@ Credits:
 
 ## Nintendo Switch 2 깨우기
 
-최초 1회, Switch 2를 켠 상태에서 Pico 2 W를 USB에 연결하면 Switch 2 깨우기에 필요한 정보가 저장됩니다.
+최초 1회, Switch 2를 켠 상태에서 Pico 2 W를 Switch 2에 USB로 연결하면 Switch 2 깨우기에 필요한 정보가 저장됩니다.
 
 1. Switch 2를 켭니다. 켠 상태에서 Pico 2 W를 Switch 2에 연결합니다.
 2. 이후, 컨트롤러의 PS/Home/Steam/Xbox 버튼을 눌러 Switch 2를 깨울 수 있습니다.
