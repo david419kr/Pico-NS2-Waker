@@ -23,15 +23,15 @@ This project is heavily inspired by [awalol/DS5Dongle](https://github.com/awalol
 
 - Makes each controller appear as a `Nintendo Switch Pro Controller`.
 - Can wake a Nintendo Switch 2 from sleep.
-  
-https://github.com/user-attachments/assets/6d79bc91-c835-4c00-9c7a-69da8449efe6
+
+https://github.com/user-attachments/assets/dea20fe9-8edf-4bef-8fdd-d5cd34437783
 - Supports motion controls and rumble. Xbox controllers do not support motion controls.
 - Lets you use the DualSense 3.5 mm jack on Switch 1/2. You can also use the DualSense microphone on Switch 2.
 
-https://github.com/user-attachments/assets/c8abf42e-1457-47fc-9118-2d43828ac63d
+https://github.com/user-attachments/assets/225a063a-80ea-4c13-8344-486e1939610d
 - As a side benefit, it lets you use a Switch 2 Pro Controller wirelessly with a Switch 1 or PC. It is recognized as a Pro Controller 1.
 
-https://github.com/user-attachments/assets/44ab9e05-e04e-4500-b72a-66529d4119e6
+https://github.com/user-attachments/assets/a7da5a1b-848a-4aae-9a14-d3d722f3f5a4
 
 ## Requirements
 
