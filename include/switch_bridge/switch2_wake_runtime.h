@@ -16,12 +16,11 @@ void switch2_wake_set_target_from_usb_pairing(const uint8_t addr_wire[6]);
 bool switch2_wake_has_target();
 
 // Request a wake attempt. The caller is responsible for checking user policy
-// such as "USB has been unmounted long enough" and "PS/Home edge happened".
+// such as "USB has been inactive long enough" and "PS/Home edge happened".
 bool switch2_wake_request();
 
-// Non-blocking state-machine service. When usb_mounted becomes true, any wake
-// attempt is canceled/re-armed because the Switch is already awake enough to
-// enumerate the USB device.
-void switch2_wake_service(bool usb_mounted);
+// Non-blocking state-machine service. An active (mounted and not suspended)
+// USB connection cancels/re-arms any wake attempt.
+void switch2_wake_service(bool usb_active);
 
 } // namespace switchbridge

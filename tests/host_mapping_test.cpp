@@ -1576,6 +1576,32 @@ void test_switch2_wake_adv_builder()
     assert(!switch2_wake_addr_valid(nullptr));
 }
 
+void test_switch2_wake_usb_state()
+{
+    Switch2WakeUsbState usb;
+    usb.update(true, false, 100);
+    assert(usb.active());
+    assert(!usb.sleep_candidate(1100, false, 1000));
+
+    usb.update(true, true, 200);
+    assert(!usb.active());
+    assert(!usb.sleep_candidate(1199, false, 1000));
+    assert(!usb.sleep_candidate(1200, true, 1000));
+    assert(usb.sleep_candidate(1200, false, 1000));
+
+    usb.update(true, false, 1201);
+    assert(usb.active());
+    assert(!usb.sleep_candidate(2201, false, 1000));
+
+    usb.update(false, false, 0xfffffff0u);
+    assert(!usb.sleep_candidate(0x000003d7u, false, 1000));
+    assert(usb.sleep_candidate(0x000003d8u, false, 1000));
+    usb.update(true, true, 0x00000400u);
+    assert(usb.sleep_candidate(0x00000400u, false, 1000));
+    usb.update(true, false, 0x00000401u);
+    assert(usb.active());
+}
+
 void test_switch_identity_runtime()
 {
     // Default identity is the captured Pro Controller fallback.
@@ -1883,6 +1909,7 @@ int main()
     test_dualshock4_bt_output_report();
     test_switch_usb_reports();
     test_switch2_wake_adv_builder();
+    test_switch2_wake_usb_state();
     test_switch2_pro_button_bytes();
     test_switch_pro_bt_input_parser();
     test_procon2_extended_handshake();

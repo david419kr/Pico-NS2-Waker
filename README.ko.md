@@ -63,6 +63,7 @@ https://github.com/user-attachments/assets/a7da5a1b-848a-4aae-9a14-d3d722f3f5a4
 1. Switch 2를 켭니다. 켠 상태에서 Pico 2 W를 Switch 2에 연결합니다.
 2. 이후, 컨트롤러의 PS/Home/Steam/Xbox 버튼을 눌러 Switch 2를 깨울 수 있습니다.
 
+Switch 2를 슬립 모드로 전환한 후 최소 1초가 지난 뒤 깨우기 버튼을 누르세요.
 Switch 2가 깨어난 타이밍에 Bluetooth 연결이 한 번 끊기므로, PS/Home/Steam/Xbox 버튼을 한 번 다시 눌러줘야 할 수 있습니다. 컨트롤러 기종에 따라 버튼 조작 필요 없이 자동으로 재연결 되는 경우도 있습니다.
 
 Switch 1 깨우기는 지원하지 않습니다.

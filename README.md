@@ -65,6 +65,7 @@ The first time, connect the Pico 2 W to USB while the Switch 2 is powered on. Th
 1. Turn on the Switch 2. While it is powered on, connect the Pico 2 W to the Switch 2.
 2. After that, press PS/Home/Steam/Xbox on the controller to wake the Switch 2.
 
+After putting the Switch 2 to sleep, allow at least one second before pressing the wake button.
 The Bluetooth connection disconnects once when the Switch 2 wakes, so you may need to press PS/Home/Steam/Xbox once again. Depending on the controller model, it may reconnect automatically without any extra button input.
 
 Switch 1 wake is not supported.

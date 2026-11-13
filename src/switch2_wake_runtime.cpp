@@ -255,12 +255,12 @@ bool switch2_wake_request()
     return true;
 }
 
-void switch2_wake_service(bool usb_mounted)
+void switch2_wake_service(bool usb_active)
 {
     const uint32_t now = board_millis();
-    if (usb_mounted) {
+    if (usb_active) {
         if (g_state != WakeState::Idle || g_advertising) {
-            std::printf("[S2WK] USB mounted, cancel/re-arm wake\n");
+            std::printf("[S2WK] USB active, cancel/re-arm wake\n");
             finish_attempt(false);
         }
         g_cooldown_until_ms = 0;

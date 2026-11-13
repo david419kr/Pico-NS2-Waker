@@ -19,6 +19,7 @@
 #include "switch_bridge/switch_identity.h"
 #include "switch_bridge/switch_pro.h"
 #include "switch_bridge/switch_usb.h"
+#include "switch_bridge/switch2_wake.h"
 #include "switch_bridge/switch2_wake_runtime.h"
 #include "switch_bridge/usb_descriptors.h"
 #include "switch_bridge/xbox_controller.h"
@@ -54,8 +55,7 @@ bool g_usb_reconnect_pending = false;
 uint32_t g_usb_reconnect_at_ms = 0;
 bool g_debug_usb_mode = false;
 bool g_ds_mute_button_down = false;
-bool g_usb_unmounted = false;
-uint32_t g_usb_unmounted_since_ms = 0;
+Switch2WakeUsbState g_wake_usb_state;
 uint32_t g_last_ds_buttons = 0;
 uint32_t g_last_ds4_buttons = 0;
 uint32_t g_last_ns_buttons = 0;
@@ -95,7 +95,7 @@ bool g_last_procon2_state_valid = false;
 bool g_procon2_back_mappings_loaded = false;
 bool g_procon2_back_mappings_dirty = false;
 
-constexpr uint32_t kUsbUnmountDebounceMs = 1000;
+constexpr uint32_t kUsbInactiveDebounceMs = 1000;
 constexpr uint32_t kHomeWakePendingWindowMs = 3000;
 constexpr uint32_t kSteamBackMappingsTlvTag = 0x5354424bu; // ASCII 'STBK'
 constexpr uint32_t kProcon2BackMappingsTlvTag = 0x5032424bu; // ASCII 'P2BK'
@@ -1078,25 +1078,15 @@ void __not_in_flash_func(service_procon2_ble_connection)()
     controller_feedback_play(ControllerFeedbackCue::Connected);
 }
 
-void __not_in_flash_func(service_usb_mount_tracking)()
+void __not_in_flash_func(service_usb_wake_tracking)()
 {
-    const uint32_t now = board_millis();
-    if (tud_mounted()) {
-        g_usb_unmounted = false;
-        g_usb_unmounted_since_ms = 0;
-        return;
-    }
-
-    if (!g_usb_unmounted) {
-        g_usb_unmounted = true;
-        g_usb_unmounted_since_ms = now;
-    }
+    g_wake_usb_state.update(tud_mounted(), tud_suspended(), board_millis());
 }
 
 bool __not_in_flash_func(usb_sleep_candidate)(uint32_t now)
 {
-    return g_usb_unmounted && !g_usb_reconnect_pending &&
-           now - g_usb_unmounted_since_ms >= kUsbUnmountDebounceMs;
+    return g_wake_usb_state.sleep_candidate(now, g_usb_reconnect_pending,
+                                            kUsbInactiveDebounceMs);
 }
 
 void __not_in_flash_func(service_switch2_registration_probe)()
@@ -1167,15 +1157,15 @@ void __not_in_flash_func(start_switch2_registration_from_switch2_host)()
 void __not_in_flash_func(service_switch2_wake_policy)()
 {
     const uint32_t now = board_millis();
-    const bool mounted = tud_mounted();
+    const bool usb_active = g_wake_usb_state.active();
 
-    if (mounted) {
+    if (usb_active) {
         g_home_wake_pending = false;
         g_auto_wake_armed = false;
     }
 
     if (g_home_wake_pending) {
-        if (mounted ||
+        if (usb_active ||
             now - g_home_wake_pending_ms > kHomeWakePendingWindowMs) {
             g_home_wake_pending = false;
         } else if (usb_sleep_candidate(now) && switch2_wake_has_target()) {
@@ -1186,16 +1176,16 @@ void __not_in_flash_func(service_switch2_wake_policy)()
     }
 
     if (g_auto_wake_armed && bt_controller_connected()) {
-        if (mounted) {
+        if (usb_active) {
             g_auto_wake_armed = false;
-        } else if (now - g_controller_connected_since_ms >= kUsbUnmountDebounceMs &&
+        } else if (now - g_controller_connected_since_ms >= kUsbInactiveDebounceMs &&
                    usb_sleep_candidate(now) && switch2_wake_has_target()) {
             g_auto_wake_armed = false;
             (void)switch2_wake_request();
         }
     }
 
-    switch2_wake_service(mounted);
+    switch2_wake_service(usb_active);
 }
 
 void __not_in_flash_func(service_dualsense_output)()
@@ -1441,7 +1431,7 @@ void __no_inline_not_in_flash_func(app_loop)()
         service_debug_usb_request();
         cyw43_arch_poll();
         tud_task();
-        service_usb_mount_tracking();
+        service_usb_wake_tracking();
         procon2_ble_service(board_millis());
         ble_controller_hub_service(board_millis());
         service_classic_hid_connection();

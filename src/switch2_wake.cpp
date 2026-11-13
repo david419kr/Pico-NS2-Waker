@@ -2,6 +2,29 @@
 
 namespace switchbridge {
 
+void Switch2WakeUsbState::update(bool mounted, bool suspended, uint32_t now_ms)
+{
+    if (mounted && !suspended) {
+        inactive_ = false;
+    } else if (!inactive_) {
+        inactive_ = true;
+        inactive_since_ms_ = now_ms;
+    }
+}
+
+bool Switch2WakeUsbState::active() const
+{
+    return !inactive_;
+}
+
+bool Switch2WakeUsbState::sleep_candidate(uint32_t now_ms,
+                                           bool reconnect_pending,
+                                           uint32_t debounce_ms) const
+{
+    return inactive_ && !reconnect_pending &&
+           now_ms - inactive_since_ms_ >= debounce_ms;
+}
+
 bool switch2_wake_addr_valid(const uint8_t addr_wire[kSwitch2WakeConsoleAddrWireSize])
 {
     if (addr_wire == nullptr) {
