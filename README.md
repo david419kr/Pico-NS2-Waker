@@ -66,7 +66,26 @@ The first time, connect the Pico 2 W to USB while the Switch 2 is powered on. Th
 2. After that, press PS/Home/Steam/Xbox on the controller to wake the Switch 2.
 
 After putting the Switch 2 to sleep, allow at least one second before pressing the wake button.
-The Bluetooth connection disconnects once when the Switch 2 wakes, so you may need to press PS/Home/Steam/Xbox once again. Depending on the controller model, it may reconnect automatically without any extra button input.
+Depending on the controller model and wake method, the Bluetooth connection may
+disconnect or the controller may power off. If so, reconnect the controller
+after the Switch wakes.
+
+If normal wake does not start because the dock keeps USB active, connect the
+controller and hold its Home button while pressing the indicated button three
+times. Release Home to force a wake attempt:
+
+| Controller | Hold | Press three times |
+| --- | --- | --- |
+| DualSense / DS4 | PS | Touchpad click |
+| Switch Pro Controller 1/2 | Home | Capture |
+| Steam Controller | Steam | QAM (...) |
+| Xbox Controller | Xbox | Back/View |
+
+This forces an attempt even if the Switch is awake and may disconnect or power
+off the controller. Forced wake tries to keep a Steam Controller connected;
+if it disconnects, wait for the attempt to finish before reconnecting it.
+One press still selects the Switch Pro persona; two presses still start manual
+registration.
 
 Switch 1 wake is not supported.
 

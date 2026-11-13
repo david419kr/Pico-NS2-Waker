@@ -33,6 +33,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdio>
 #include <cstring>
 
 using namespace switchbridge;
@@ -63,6 +64,7 @@ uint32_t g_last_steam_buttons = 0;
 uint32_t g_last_xbox_buttons = 0;
 bool g_home_wake_pending = false;
 uint32_t g_home_wake_pending_ms = 0;
+bool g_force_wake_pending = false;
 bool g_auto_wake_armed = false;
 uint32_t g_controller_connected_since_ms = 0;
 uint8_t g_switch2_report_counter = 0;
@@ -208,9 +210,15 @@ SwitchReport build_switch2_registration_input_report()
     return out;
 }
 
+void disconnect_usb()
+{
+    g_wake_usb_state.disconnected(board_millis());
+    tud_disconnect();
+}
+
 void request_usb_reconnect(uint32_t delay_ms = 250u)
 {
-    tud_disconnect();
+    disconnect_usb();
     g_usb_reconnect_pending = true;
     g_usb_reconnect_at_ms = board_millis() + delay_ms;
 }
@@ -264,6 +272,23 @@ void select_switch2_pro_persona()
     g_usb_persona = UsbAudioPersona::HidOnly;
     usb_descriptors_set_audio_persona(UsbAudioPersona::HidOnly);
     request_usb_reconnect();
+}
+
+void handle_persona_combo_request(PersonaComboRequest request)
+{
+    switch (request) {
+    case PersonaComboRequest::SwitchPro:
+        select_switch_pro_persona();
+        break;
+    case PersonaComboRequest::Switch2Pro:
+        select_switch2_pro_persona();
+        break;
+    case PersonaComboRequest::ForceWake:
+        g_force_wake_pending = true;
+        break;
+    case PersonaComboRequest::None:
+        break;
+    }
 }
 
 void push_pending(const SwitchReport &report)
@@ -355,7 +380,7 @@ void finish_switch2_registration_attempt()
         ? dualsense_audio_desired_persona()
         : UsbAudioPersona::HidOnly;
     usb_descriptors_set_audio_persona(g_usb_persona);
-    tud_disconnect();
+    disconnect_usb();
     g_usb_reconnect_pending = false;
 
     if (bt_controller_connected()) {
@@ -540,11 +565,7 @@ void __not_in_flash_func(handle_xbox_input)(XboxControllerInput input)
         g_persona_combo_filter.process(input.buttons, kXboxBtnGuide,
                                        kXboxBtnBack, now);
     input.buttons = combo.buttons;
-    if (combo.request == PersonaComboRequest::SwitchPro) {
-        select_switch_pro_persona();
-    } else if (combo.request == PersonaComboRequest::Switch2Pro) {
-        select_switch2_pro_persona();
-    }
+    handle_persona_combo_request(combo.request);
 
     const bool capture_combo =
         (input.buttons & (kXboxBtnBack | kXboxBtnMenu)) ==
@@ -589,11 +610,7 @@ void __not_in_flash_func(on_classic_hid_data)(ClassicHidChannel channel,
             g_persona_combo_filter.process(state.buttons, kNsHome, kNsCapture,
                                            now);
         state.buttons = combo.buttons;
-        if (combo.request == PersonaComboRequest::SwitchPro) {
-            select_switch_pro_persona();
-        } else if (combo.request == PersonaComboRequest::Switch2Pro) {
-            select_switch2_pro_persona();
-        }
+        handle_persona_combo_request(combo.request);
 
         const bool home_down = (state.buttons & kNsHome) != 0;
         const bool home_edge = home_down && (g_last_ns_buttons & kNsHome) == 0;
@@ -631,11 +648,7 @@ void __not_in_flash_func(on_classic_hid_data)(ClassicHidChannel channel,
         const PersonaComboFilterResult combo =
             g_persona_combo_filter.process(input.buttons, now);
         input.buttons = combo.buttons;
-        if (combo.request == PersonaComboRequest::SwitchPro) {
-            select_switch_pro_persona();
-        } else if (combo.request == PersonaComboRequest::Switch2Pro) {
-            select_switch2_pro_persona();
-        }
+        handle_persona_combo_request(combo.request);
 
         const bool home_down = (input.buttons & kPsButton) != 0;
         const bool home_edge =
@@ -666,11 +679,7 @@ void __not_in_flash_func(on_classic_hid_data)(ClassicHidChannel channel,
     const PersonaComboFilterResult combo =
         g_persona_combo_filter.process(input.buttons, now);
     input.buttons = combo.buttons;
-    if (combo.request == PersonaComboRequest::SwitchPro) {
-        select_switch_pro_persona();
-    } else if (combo.request == PersonaComboRequest::Switch2Pro) {
-        select_switch2_pro_persona();
-    }
+    handle_persona_combo_request(combo.request);
 
     const bool power_off_combo_down =
         (input.buttons & kDualSensePowerOffCombo) == kDualSensePowerOffCombo;
@@ -731,11 +740,7 @@ void __not_in_flash_func(on_ble_controller_data)(BleControllerKind kind,
         g_persona_combo_filter.process(input.buttons, kSteamBtnSteam,
                                        kSteamBtnSteamMenu, now);
     input.buttons = combo.buttons;
-    if (combo.request == PersonaComboRequest::SwitchPro) {
-        select_switch_pro_persona();
-    } else if (combo.request == PersonaComboRequest::Switch2Pro) {
-        select_switch2_pro_persona();
-    }
+    handle_persona_combo_request(combo.request);
 
     const bool power_off_combo_down =
         (input.buttons & kSteamPowerOffCombo) == kSteamPowerOffCombo;
@@ -805,11 +810,7 @@ void __not_in_flash_func(on_procon2_ble_data)(const SwitchProState &input_state)
         g_persona_combo_filter.process(state.buttons, kNsHome, kNsCapture,
                                        now);
     state.buttons = combo.buttons;
-    if (combo.request == PersonaComboRequest::SwitchPro) {
-        select_switch_pro_persona();
-    } else if (combo.request == PersonaComboRequest::Switch2Pro) {
-        select_switch2_pro_persona();
-    }
+    handle_persona_combo_request(combo.request);
 
     load_procon2_back_mappings();
     const SwitchProState previous_state = g_last_procon2_state;
@@ -928,7 +929,7 @@ void __not_in_flash_func(service_classic_hid_connection)()
         g_usb_persona = UsbAudioPersona::HidOnly;
         usb_descriptors_set_audio_persona(g_usb_persona);
         if (!g_debug_usb_mode) {
-            tud_disconnect();
+            disconnect_usb();
         }
 
         PlayStationInput neutral{};
@@ -1010,7 +1011,7 @@ void __not_in_flash_func(service_ble_controller_connection)()
         g_usb_persona = UsbAudioPersona::HidOnly;
         usb_descriptors_set_audio_persona(g_usb_persona);
         if (!g_debug_usb_mode) {
-            tud_disconnect();
+            disconnect_usb();
         }
 
         SwitchProState neutral{};
@@ -1057,7 +1058,7 @@ void __not_in_flash_func(service_procon2_ble_connection)()
         g_usb_persona = UsbAudioPersona::HidOnly;
         usb_descriptors_set_audio_persona(g_usb_persona);
         if (!g_debug_usb_mode) {
-            tud_disconnect();
+            disconnect_usb();
         }
 
         SwitchProState neutral{};
@@ -1159,6 +1160,16 @@ void __not_in_flash_func(service_switch2_wake_policy)()
     const uint32_t now = board_millis();
     const bool usb_active = g_wake_usb_state.active();
 
+    if (g_force_wake_pending) {
+        g_force_wake_pending = false;
+        if (switch2_wake_request(true)) {
+            g_home_wake_pending = false;
+            g_auto_wake_armed = false;
+        } else {
+            std::printf("[S2WK] Forced wake unavailable: no target or attempt busy\n");
+        }
+    }
+
     if (usb_active) {
         g_home_wake_pending = false;
         g_auto_wake_armed = false;
@@ -1168,10 +1179,10 @@ void __not_in_flash_func(service_switch2_wake_policy)()
         if (usb_active ||
             now - g_home_wake_pending_ms > kHomeWakePendingWindowMs) {
             g_home_wake_pending = false;
-        } else if (usb_sleep_candidate(now) && switch2_wake_has_target()) {
+        } else if (usb_sleep_candidate(now) && switch2_wake_has_target() &&
+                   switch2_wake_request()) {
             g_home_wake_pending = false;
             g_auto_wake_armed = false;
-            (void)switch2_wake_request();
         }
     }
 
@@ -1179,9 +1190,9 @@ void __not_in_flash_func(service_switch2_wake_policy)()
         if (usb_active) {
             g_auto_wake_armed = false;
         } else if (now - g_controller_connected_since_ms >= kUsbInactiveDebounceMs &&
-                   usb_sleep_candidate(now) && switch2_wake_has_target()) {
+                   usb_sleep_candidate(now) && switch2_wake_has_target() &&
+                   switch2_wake_request()) {
             g_auto_wake_armed = false;
-            (void)switch2_wake_request();
         }
     }
 
@@ -1464,7 +1475,7 @@ int main()
         .speed = TUSB_SPEED_FULL,
     };
     tusb_init(BOARD_TUD_RHPORT, &dev_init);
-    tud_disconnect();
+    disconnect_usb();
     board_init_after_tusb();
 
     if (cyw43_arch_init() != 0) {
@@ -1494,6 +1505,16 @@ int main()
 
     app_loop();
     return 0;
+}
+
+extern "C" void tud_mount_cb()
+{
+    g_wake_usb_state.mounted();
+}
+
+extern "C" void tud_umount_cb()
+{
+    g_wake_usb_state.disconnected(board_millis());
 }
 
 extern "C" uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id,

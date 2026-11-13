@@ -2,9 +2,40 @@
 
 namespace switchbridge {
 
+void Switch2WakeUsbGuard::start(bool forced)
+{
+    forced_ = forced;
+    saw_inactive_ = false;
+}
+
+void Switch2WakeUsbGuard::reset()
+{
+    start(false);
+}
+
+bool Switch2WakeUsbGuard::should_cancel(bool usb_active)
+{
+    if (!usb_active) {
+        saw_inactive_ = true;
+        return false;
+    }
+    return !forced_ || saw_inactive_;
+}
+
+void Switch2WakeUsbState::mounted()
+{
+    session_mounted_ = true;
+}
+
+void Switch2WakeUsbState::disconnected(uint32_t now_ms)
+{
+    session_mounted_ = false;
+    update(false, false, now_ms);
+}
+
 void Switch2WakeUsbState::update(bool mounted, bool suspended, uint32_t now_ms)
 {
-    if (mounted && !suspended) {
+    if (session_mounted_ && mounted && !suspended) {
         inactive_ = false;
     } else if (!inactive_) {
         inactive_ = true;

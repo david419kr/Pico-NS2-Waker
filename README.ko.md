@@ -64,7 +64,18 @@ https://github.com/user-attachments/assets/a7da5a1b-848a-4aae-9a14-d3d722f3f5a4
 2. 이후, 컨트롤러의 PS/Home/Steam/Xbox 버튼을 눌러 Switch 2를 깨울 수 있습니다.
 
 Switch 2를 슬립 모드로 전환한 후 최소 1초가 지난 뒤 깨우기 버튼을 누르세요.
-Switch 2가 깨어난 타이밍에 Bluetooth 연결이 한 번 끊기므로, PS/Home/Steam/Xbox 버튼을 한 번 다시 눌러줘야 할 수 있습니다. 컨트롤러 기종에 따라 버튼 조작 필요 없이 자동으로 재연결 되는 경우도 있습니다.
+컨트롤러 기종과 깨우기 방식에 따라 Bluetooth 연결이 끊기거나 컨트롤러 전원이 꺼질 수 있습니다. 이 경우 Switch가 깨어난 후 컨트롤러를 다시 연결하세요.
+
+독이 USB 연결을 유지해 일반 깨우기가 시작되지 않으면 컨트롤러를 연결한 뒤 아래 버튼을 누른 상태에서 지정된 버튼을 3번 누르고, 누르고 있던 버튼을 놓아 강제로 깨우기를 시도할 수 있습니다.
+
+| 컨트롤러 | 누르고 있을 버튼 | 3번 누를 버튼 |
+| --- | --- | --- |
+| DualSense / DS4 | PS | 터치패드 클릭 |
+| Switch Pro Controller 1/2 | Home | Capture |
+| Steam Controller | Steam | QAM (...) |
+| Xbox Controller | Xbox | Back/View |
+
+Switch가 이미 켜져 있어도 깨우기를 시도하며 컨트롤러 연결이 끊기거나 전원이 꺼질 수 있습니다. 강제 깨우기 중에는 Steam Controller 연결을 유지하려고 시도합니다. 연결이 끊기면 시도가 끝난 후 다시 연결하세요. 한 번 누르기는 일반 Switch Pro 모드, 두 번 누르기는 수동 등록 기능을 유지합니다.
 
 Switch 1 깨우기는 지원하지 않습니다.
 

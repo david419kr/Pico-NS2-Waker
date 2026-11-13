@@ -44,8 +44,10 @@ PersonaComboFilterResult PersonaComboFilter::process(uint32_t raw_buttons,
     } else if (home_release) {
         if (tap_count_ == 1u) {
             result.request = PersonaComboRequest::SwitchPro;
-        } else if (tap_count_ >= 2u) {
+        } else if (tap_count_ == 2u) {
             result.request = PersonaComboRequest::Switch2Pro;
+        } else if (tap_count_ == 3u) {
+            result.request = PersonaComboRequest::ForceWake;
         }
 
         if (tap_count_ != 0u) {

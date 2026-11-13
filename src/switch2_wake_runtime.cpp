@@ -42,6 +42,8 @@ uint32_t g_state_ms = 0;
 uint32_t g_cooldown_until_ms = 0;
 bool g_has_target = false;
 bool g_advertising = false;
+bool g_keep_steam_connected = false;
+Switch2WakeUsbGuard g_usb_guard;
 
 void print_addr_wire(const char *prefix,
                      const uint8_t addr[kSwitch2WakeConsoleAddrWireSize])
@@ -127,23 +129,25 @@ void stop_advertising()
 
 bool disconnect_classic_controller_for_wake()
 {
-    std::printf("[S2WK] Wake requested, power off/disconnect controller "
-                "before advertise\n");
+    std::printf("[S2WK] Wake requested, prepare controller before advertise\n");
     (void)classic_hid_power_off_active_controller();
-    const bool steam_power_off_queued = steam_controller_ble_power_off();
+    const bool steam_power_off_queued =
+        !g_keep_steam_connected && steam_controller_ble_power_off();
     (void)classic_hid_disconnect();
     return steam_power_off_queued;
 }
 
 void start_wake_advertising_after_controller_pause()
 {
-    ble_controller_hub_pause_for_switch2_wake();
+    ble_controller_hub_pause_for_switch2_wake(g_keep_steam_connected);
     start_advertising();
 }
 
 void finish_attempt(bool apply_cooldown)
 {
     stop_advertising();
+    g_usb_guard.reset();
+    g_keep_steam_connected = false;
     classic_hid_resume_after_switch2_wake();
     ble_controller_hub_resume_after_switch2_wake();
     const uint32_t now = board_millis();
@@ -179,7 +183,9 @@ void hci_packet_handler(uint8_t packet_type, uint16_t channel,
             HCI_SUBEVENT_LE_CONNECTION_COMPLETE) {
             const uint8_t status =
                 hci_subevent_le_connection_complete_get_status(packet);
-            if (status == ERROR_CODE_SUCCESS) {
+            if (status == ERROR_CODE_SUCCESS && g_advertising &&
+                hci_subevent_le_connection_complete_get_role(packet) ==
+                    HCI_ROLE_SLAVE) {
                 g_le_handle =
                     hci_subevent_le_connection_complete_get_connection_handle(packet);
                 std::printf("[S2WK] LE connected handle=0x%04x\n", g_le_handle);
@@ -235,7 +241,7 @@ bool switch2_wake_has_target()
     return g_has_target && switch2_wake_addr_valid(g_target_addr_wire.data());
 }
 
-bool switch2_wake_request()
+bool switch2_wake_request(bool force)
 {
     if (!switch2_wake_has_target() || g_state != WakeState::Idle) {
         return false;
@@ -248,6 +254,10 @@ bool switch2_wake_request()
     }
 
     std::printf("[S2WK] Wake requested\n");
+    g_keep_steam_connected =
+        force && ble_controller_hub_controller_kind() ==
+                     BleControllerKind::SteamController;
+    g_usb_guard.start(force);
     classic_hid_pause_for_switch2_wake();
     controller_feedback_play(ControllerFeedbackCue::WakeDisconnect);
     g_state = WakeState::DisconnectFeedback;
@@ -258,7 +268,11 @@ bool switch2_wake_request()
 void switch2_wake_service(bool usb_active)
 {
     const uint32_t now = board_millis();
-    if (usb_active) {
+    if (g_state == WakeState::Idle && usb_active) {
+        g_cooldown_until_ms = 0;
+        return;
+    }
+    if (g_usb_guard.should_cancel(usb_active)) {
         if (g_state != WakeState::Idle || g_advertising) {
             std::printf("[S2WK] USB active, cancel/re-arm wake\n");
             finish_attempt(false);

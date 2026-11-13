@@ -17,10 +17,11 @@ bool switch2_wake_has_target();
 
 // Request a wake attempt. The caller is responsible for checking user policy
 // such as "USB has been inactive long enough" and "PS/Home edge happened".
-bool switch2_wake_request();
+bool switch2_wake_request(bool force = false);
 
-// Non-blocking state-machine service. An active (mounted and not suspended)
-// USB connection cancels/re-arms any wake attempt.
+// Non-blocking state-machine service. A normal wake attempt is canceled when
+// USB becomes active. A forced attempt waits for an inactive-to-active
+// transition or its advertising timeout.
 void switch2_wake_service(bool usb_active);
 
 } // namespace switchbridge
