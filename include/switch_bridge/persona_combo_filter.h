@@ -10,6 +10,7 @@ enum class PersonaComboRequest : uint8_t {
     None,
     SwitchPro,
     Switch2Pro,
+    ForceWake,
 };
 
 struct PersonaComboFilterResult {

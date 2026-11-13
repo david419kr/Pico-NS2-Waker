@@ -146,6 +146,44 @@ void test_persona_combo_filter()
     assert(r.request == PersonaComboRequest::Switch2Pro);
     assert((r.buttons & kNsHome) == 0);
     assert((r.buttons & kNsCapture) == 0);
+
+    struct ComboButtons {
+        uint32_t home;
+        uint32_t capture;
+    };
+    const ComboButtons controllers[] = {
+        {kPsButton, kPsTouchpadClick},
+        {kNsHome, kNsCapture},
+        {kSteamBtnSteam, kSteamBtnSteamMenu},
+        {kXboxBtnGuide, kXboxBtnBack},
+    };
+    for (const auto &buttons : controllers) {
+        filter.reset();
+        (void)filter.process(buttons.home, buttons.home, buttons.capture, 0);
+        for (uint32_t tap = 0; tap < 3; ++tap) {
+            r = filter.process(buttons.home | buttons.capture, buttons.home,
+                               buttons.capture, 8 + tap * 16);
+            assert(r.request == PersonaComboRequest::None);
+            assert((r.buttons & buttons.capture) == 0);
+            if (tap != 2) {
+                (void)filter.process(buttons.home, buttons.home,
+                                     buttons.capture, 16 + tap * 16);
+            }
+        }
+        r = filter.process(buttons.capture, buttons.home, buttons.capture, 48);
+        assert(r.request == PersonaComboRequest::ForceWake);
+        assert((r.buttons & buttons.capture) == 0);
+        r = filter.process(buttons.capture, buttons.home, buttons.capture, 56);
+        assert(r.request == PersonaComboRequest::None);
+        assert((r.buttons & buttons.capture) == 0);
+    }
+
+    filter.reset();
+    for (uint32_t tap = 0; tap < 4; ++tap) {
+        (void)filter.process(kPsButton | kPsTouchpadClick, tap * 16);
+        (void)filter.process(kPsButton, tap * 16 + 8);
+    }
+    assert(filter.process(0, 64).request == PersonaComboRequest::None);
 }
 
 void test_axis_and_motion_mapping()
@@ -1576,6 +1614,64 @@ void test_switch2_wake_adv_builder()
     assert(!switch2_wake_addr_valid(nullptr));
 }
 
+void test_switch2_wake_usb_state()
+{
+    Switch2WakeUsbState usb;
+    usb.mounted();
+    usb.update(true, false, 100);
+    assert(usb.active());
+    assert(!usb.sleep_candidate(1100, false, 1000));
+
+    usb.update(true, true, 200);
+    assert(!usb.active());
+    assert(!usb.sleep_candidate(1199, false, 1000));
+    assert(!usb.sleep_candidate(1200, true, 1000));
+    assert(usb.sleep_candidate(1200, false, 1000));
+
+    usb.update(true, false, 1201);
+    assert(usb.active());
+    assert(!usb.sleep_candidate(2201, false, 1000));
+
+    usb.update(false, false, 0xfffffff0u);
+    assert(!usb.sleep_candidate(0x000003d7u, false, 1000));
+    assert(usb.sleep_candidate(0x000003d8u, false, 1000));
+    usb.update(true, true, 0x00000400u);
+    assert(usb.sleep_candidate(0x00000400u, false, 1000));
+    usb.update(true, false, 0x00000401u);
+    assert(usb.active());
+
+    usb.disconnected(2000);
+    assert(!usb.active());
+    usb.update(true, false, 2250);
+    assert(!usb.active());
+    assert(!usb.sleep_candidate(2999, false, 1000));
+    assert(!usb.sleep_candidate(3000, true, 1000));
+    assert(usb.sleep_candidate(3000, false, 1000));
+    usb.mounted();
+    usb.update(true, false, 3001);
+    assert(usb.active());
+    assert(!usb.sleep_candidate(4001, false, 1000));
+}
+
+void test_switch2_wake_usb_guard()
+{
+    Switch2WakeUsbGuard guard;
+    guard.start(false);
+    assert(!guard.should_cancel(false));
+    assert(guard.should_cancel(true));
+
+    guard.start(true);
+    assert(!guard.should_cancel(true));
+    assert(!guard.should_cancel(true));
+    assert(!guard.should_cancel(false));
+    assert(guard.should_cancel(true));
+
+    guard.start(true);
+    assert(!guard.should_cancel(true));
+    guard.reset();
+    assert(guard.should_cancel(true));
+}
+
 void test_switch_identity_runtime()
 {
     // Default identity is the captured Pro Controller fallback.
@@ -1883,6 +1979,8 @@ int main()
     test_dualshock4_bt_output_report();
     test_switch_usb_reports();
     test_switch2_wake_adv_builder();
+    test_switch2_wake_usb_state();
+    test_switch2_wake_usb_guard();
     test_switch2_pro_button_bytes();
     test_switch_pro_bt_input_parser();
     test_procon2_extended_handshake();

@@ -68,6 +68,7 @@ bool g_stack_ready = false;
 bool g_write_ready = false;
 bool g_xbox_input_probe_pending = false;
 bool g_scan_suppressed = false;
+bool g_keep_connected_while_paused = false;
 BleControllerKind g_ble_controller_kind = BleControllerKind::Unknown;
 BleControllerKind g_last_seen_ble_kind = BleControllerKind::Unknown;
 
@@ -78,7 +79,10 @@ uint32_t now_ms()
 
 bool state_is_connected()
 {
-    return g_state == BleControllerHubState::Connected && g_hids_cid != 0;
+    return (g_state == BleControllerHubState::Connected ||
+            (g_state == BleControllerHubState::Paused &&
+             g_keep_connected_while_paused)) &&
+           g_hids_cid != 0;
 }
 
 bool can_write_hid_report()
@@ -315,6 +319,7 @@ void try_xbox_input_probe()
 
 void clear_runtime_state(bool schedule_scan)
 {
+    g_keep_connected_while_paused = false;
     steam_controller_ble_reset();
     g_ble_controller_kind = BleControllerKind::Unknown;
     g_con_handle = HCI_CON_HANDLE_INVALID;
@@ -594,6 +599,9 @@ void ble_controller_hub_service(uint32_t now_ms)
 {
     if (g_state == BleControllerHubState::Paused) {
         steam_controller_ble_service(now_ms);
+        if (g_keep_connected_while_paused) {
+            try_tx();
+        }
         return;
     }
 
@@ -673,13 +681,16 @@ bool ble_controller_hub_disconnect()
     return false;
 }
 
-void ble_controller_hub_pause_for_switch2_wake()
+void ble_controller_hub_pause_for_switch2_wake(bool keep_controller_connected)
 {
     if (g_state == BleControllerHubState::Paused) {
         return;
     }
 
-    std::printf("[BLE-HUB] Pause for Switch 2 wake\n");
+    g_keep_connected_while_paused =
+        keep_controller_connected && state_is_connected();
+    std::printf("[BLE-HUB] Pause for Switch 2 wake, keep connection=%u\n",
+                g_keep_connected_while_paused ? 1u : 0u);
     if (g_state == BleControllerHubState::Scanning) {
         gap_stop_scan();
     } else if (g_state == BleControllerHubState::Connecting) {
@@ -695,6 +706,7 @@ void ble_controller_hub_resume_after_switch2_wake()
     }
 
     std::printf("[BLE-HUB] Resume after Switch 2 wake\n");
+    g_keep_connected_while_paused = false;
     if (g_hids_cid != 0) {
         g_state = BleControllerHubState::Connected;
         steam_controller_ble_schedule_heartbeat(now_ms());

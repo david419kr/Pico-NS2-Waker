@@ -26,7 +26,7 @@ BleControllerKind ble_controller_hub_controller_kind();
 bool ble_controller_hub_send_switch_feedback(const SwitchUsbFeedback &feedback);
 bool ble_controller_hub_disconnect();
 
-void ble_controller_hub_pause_for_switch2_wake();
+void ble_controller_hub_pause_for_switch2_wake(bool keep_controller_connected);
 void ble_controller_hub_resume_after_switch2_wake();
 
 // Suppress the continuous LE HID discovery scan. The active 100%-duty scan
